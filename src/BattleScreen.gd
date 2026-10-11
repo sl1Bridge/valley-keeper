@@ -17,7 +17,7 @@ signal boss_defeated
 const HERO_POS := Vector2(320, 460)
 const FORMATION_ANCHOR := Vector2(880, 420)  # центр строя врагов
 const BOSS_POS := Vector2(920, 450)
-const FINAL_CHEST_POS := Vector2(620, 330)
+const FINAL_CHEST_POS := Vector2(640, 430)  # центр поля боя
 
 ## Строи по числу врагов: смещения от FORMATION_ANCHOR.
 ## Один враг — напротив героя; больше — разные построения, не колонной.
@@ -485,40 +485,89 @@ class Chest:
 
 class Backdrop:
 	extends Node2D
-	## Фон экрана боя: небо, солнце, холмы и изометрическая земля ромбами.
-	## Позже фон будет меняться в зависимости от уровня.
+	## Фон экрана боя слоями: небо и солнце, дальние холмы и деревья,
+	## полоса изометрического поля боя посередине, трава переднего плана внизу.
+	## Рисуется под реальный размер окна. Позже фон будет меняться от уровня.
 
 	const TILE_W := 96.0
 	const TILE_H := 48.0
-	const GROUND_ORIGIN := Vector2(640, 310)
-	const GROUND_ROWS := 10
-	const GROUND_COLS := 16
+	const HORIZON := 0.44      # линия горизонта (доля высоты окна)
+	const FIELD_TOP := 0.56    # верх поля боя
+	const FIELD_BOTTOM := 0.9  # низ поля боя (дальше — передний план)
+
+
+	func _ready() -> void:
+		# Перерисовка при изменении размера окна (stretch expand меняет ширину)
+		get_viewport().size_changed.connect(queue_redraw)
 
 
 	func _draw() -> void:
-		# Небо
-		draw_rect(Rect2(0, 0, 1280, 300), Color(0.66, 0.82, 0.95))
-		draw_rect(Rect2(0, 300, 1280, 160), Color(0.78, 0.89, 0.96))
+		var size := get_viewport_rect().size
+		var horizon_y: float = size.y * HORIZON
+		var field_top: float = size.y * FIELD_TOP
+		var field_bottom: float = size.y * FIELD_BOTTOM
+
+		# Небо (две полосы, светлее к горизонту)
+		draw_rect(Rect2(0, 0, size.x, horizon_y), Color(0.66, 0.82, 0.95))
+		draw_rect(Rect2(0, horizon_y * 0.55, size.x, horizon_y * 0.45 + 2), Color(0.75, 0.88, 0.96))
 		# Солнце
-		draw_circle(Vector2(1080, 110), 60, Color(1.0, 0.95, 0.6, 0.25))
-		draw_circle(Vector2(1080, 110), 44, Color(1.0, 0.95, 0.62))
-		# Дальние холмы
-		draw_colored_polygon(PackedVector2Array([
-			Vector2(0, 430), Vector2(180, 300), Vector2(380, 405), Vector2(560, 295),
-			Vector2(760, 410), Vector2(980, 315), Vector2(1280, 425),
-			Vector2(1280, 470), Vector2(0, 470),
-		]), Color(0.53, 0.7, 0.6))
-		# Основа земли (чтобы ромбы не оставляли просветов по краям)
-		draw_rect(Rect2(0, 430, 1280, 290), Color(0.56, 0.73, 0.5))
-		# Изометрическая плитка
-		for row in GROUND_ROWS:
-			for col in GROUND_COLS:
-				var p := GROUND_ORIGIN + Vector2((col - row) * TILE_W / 2, (col + row) * TILE_H / 2)
-				var shade := 0.03 * ((row + col) % 2)
-				var c := Color(0.55 + shade, 0.74 + shade, 0.49 + shade)
+		var sun := Vector2(size.x * 0.84, size.y * 0.16)
+		draw_circle(sun, size.y * 0.085, Color(1.0, 0.95, 0.6, 0.25))
+		draw_circle(sun, size.y * 0.06, Color(1.0, 0.95, 0.62))
+
+		# Дальние холмы: два мягких гребня через весь экран
+		_draw_ridge(size, horizon_y + size.y * 0.02, size.y * 0.1, Color(0.62, 0.78, 0.66), 3)
+		_draw_ridge(size, horizon_y + size.y * 0.06, size.y * 0.06, Color(0.52, 0.7, 0.57), 4)
+
+		# Деревья-кроны вдоль горизонта
+		for fx in [0.1, 0.36, 0.64, 0.9]:
+			_draw_canopy(Vector2(size.x * fx, horizon_y + size.y * 0.05), size.y * 0.045)
+
+		# Трава между горизонтом и полем боя
+		draw_rect(Rect2(0, horizon_y, size.x, field_top - horizon_y + TILE_H), Color(0.6, 0.78, 0.52))
+
+		# Поле боя: изометрическая плитка сплошной полосой через весь экран
+		var base := Color(0.57, 0.75, 0.5)
+		draw_rect(Rect2(0, field_top, size.x, field_bottom - field_top), base)
+		var alt := Color(0.62, 0.79, 0.54)
+		var row := 0
+		var y: float = field_top - TILE_H / 2
+		while y < field_bottom + TILE_H:
+			var x: float = -TILE_W + (TILE_W / 2 if row % 2 == 1 else 0.0)
+			var col := 0
+			while x < size.x + TILE_W:
+				var c := alt if (row + col) % 2 == 0 else base
 				draw_colored_polygon(PackedVector2Array([
-					p + Vector2(0, -TILE_H / 2),
-					p + Vector2(TILE_W / 2, 0),
-					p + Vector2(0, TILE_H / 2),
-					p + Vector2(-TILE_W / 2, 0),
+					Vector2(x, y - TILE_H / 2),
+					Vector2(x + TILE_W / 2, y),
+					Vector2(x, y + TILE_H / 2),
+					Vector2(x - TILE_W / 2, y),
 				]), c)
+				x += TILE_W
+				col += 1
+			y += TILE_H / 2
+			row += 1
+
+		# Передний план: более тёмная трава, закрывает нижний край плитки
+		draw_rect(Rect2(0, field_bottom, size.x, size.y - field_bottom), Color(0.5, 0.69, 0.45))
+
+
+	## Гребень холмов через весь экран: треугольная волна с заданным числом пиков.
+	func _draw_ridge(size: Vector2, base_y: float, amp: float, color: Color, peaks: int) -> void:
+		var pts := PackedVector2Array()
+		pts.append(Vector2(0, base_y))
+		for i in range(peaks * 2 + 1):
+			var x: float = size.x * i / (peaks * 2)
+			var y: float = base_y - (amp if i % 2 == 1 else 0.0)
+			pts.append(Vector2(x, y))
+		pts.append(Vector2(size.x, base_y + amp * 2))
+		pts.append(Vector2(0, base_y + amp * 2))
+		draw_colored_polygon(pts, color)
+
+
+	## Крона дерева: три круга.
+	func _draw_canopy(center: Vector2, r: float) -> void:
+		var c := Color(0.42, 0.64, 0.42)
+		draw_circle(center + Vector2(-r, 0), r, c)
+		draw_circle(center + Vector2(r, 0), r, c)
+		draw_circle(center + Vector2(0, -r * 0.8), r * 1.1, c.lightened(0.08))
