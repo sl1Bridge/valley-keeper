@@ -26,19 +26,41 @@ const TYPES := {
 }
 
 
-## Состав волны: массив ключей типов. 10-я волна — только босс.
-static func wave_composition(wave: int) -> Array:
+## Максимум врагов в одной волне (босс — всегда один).
+const MAX_ENEMIES := 5
+
+
+## Веса типов в волне: чем дальше, тем чаще встречаются сильные враги.
+## Слизень постепенно сходит на нет, волк и голем набирают вес.
+static func type_weights(wave: int) -> Dictionary:
+	return {
+		"slime": maxf(1.0, 7.0 - wave),
+		"wolf": clampf(float(wave - 1), 0.0, 4.0),
+		"golem": clampf(float(wave - 3), 0.0, 4.0),
+	}
+
+
+## Состав волны: массив ключей типов, не больше MAX_ENEMIES. 10-я волна — только босс.
+static func wave_composition(wave: int, rng: RandomNumberGenerator = null) -> Array:
 	if wave >= TOTAL_WAVES:
 		return ["boss"]
+	if rng == null:
+		rng = RandomNumberGenerator.new()
+		rng.randomize()
+	var weights := type_weights(wave)
+	var total := 0.0
+	for k in weights:
+		total += weights[k]
 	var list := []
-	var n := 2 + wave
+	var n: int = mini(2 + wave, MAX_ENEMIES)
 	for i in n:
-		if wave >= 5 and i % 4 == 3:
-			list.append("golem")
-		elif wave >= 3 and i % 2 == 1:
-			list.append("wolf")
-		else:
-			list.append("slime")
+		var r := rng.randf() * total
+		var acc := 0.0
+		for k in weights:
+			acc += weights[k]
+			if r <= acc:
+				list.append(k)
+				break
 	return list
 
 

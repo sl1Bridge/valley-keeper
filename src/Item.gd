@@ -44,9 +44,13 @@ var rarity: int
 var bonuses: Dictionary
 
 
-## Бросок редкости. Из сундука шансы лучше.
-static func roll_rarity(rng: RandomNumberGenerator, from_chest: bool) -> int:
+## Бросок редкости. Из сундука шансы лучше, из финального сундука волны (rich) — ещё лучше.
+static func roll_rarity(rng: RandomNumberGenerator, from_chest: bool, rich: bool = false) -> int:
 	var r := rng.randf()
+	if rich:
+		if r < 0.2:
+			return 0
+		return 1 if r < 0.65 else 2
 	if from_chest:
 		if r < 0.5:
 			return 0
@@ -59,12 +63,13 @@ static func roll_rarity(rng: RandomNumberGenerator, from_chest: bool) -> int:
 
 ## Генерация случайного предмета. rarity = -1 — бросить жребий.
 ## exclude_names — шаблоны с такими именами не выпадут (для сундука «3 на выбор»).
-static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, from_chest: bool = false, exclude_names: Array = []) -> Item:
+## rich — финальный сундук волны: шансы редкости выше.
+static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, from_chest: bool = false, exclude_names: Array = [], rich: bool = false) -> Item:
 	if rng == null:
 		rng = RandomNumberGenerator.new()
 		rng.randomize()
 	if rarity < 0:
-		rarity = roll_rarity(rng, from_chest)
+		rarity = roll_rarity(rng, from_chest, rich)
 	var candidates := []
 	for t in TEMPLATES:
 		if not exclude_names.has(t["name"]):

@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_test_hero()
 	_test_rings_and_regen()
 	_test_enemies()
+	_test_chests_heal_speed()
 	_test_battle_sim()
 	_test_boss_sims()
 	print("=== Запуск Main.tscn ===")
@@ -191,7 +192,23 @@ func _test_enemies() -> void:
 	var comp1 := Enemies.wave_composition(1)
 	_check(comp1.size() == 3 and comp1.all(func(t): return t == "slime"), "волна 1 — три слизня")
 	_check(Enemies.wave_composition(10) == ["boss"], "волна 10 — босс")
-	_check(Enemies.wave_composition(5).has("golem"), "с 5 волны появляются големы")
+
+	# Ни в одной волне не больше MAX_ENEMIES врагов
+	var capped := true
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	for w in range(1, Enemies.TOTAL_WAVES):
+		if Enemies.wave_composition(w, rng).size() > Enemies.MAX_ENEMIES:
+			capped = false
+	_check(capped, "в волне не больше %d врагов" % Enemies.MAX_ENEMIES)
+	var comp9 := Enemies.wave_composition(9, rng)
+	_check(comp9.size() == Enemies.MAX_ENEMIES, "волна 9 — ровно %d врагов" % Enemies.MAX_ENEMIES)
+
+	# Сильные враги встречаются чаще на поздних волнах
+	var w1: Dictionary = Enemies.type_weights(1)
+	var w9: Dictionary = Enemies.type_weights(9)
+	_check(w1["wolf"] == 0.0 and w1["golem"] == 0.0, "на 1 волне только слизни")
+	_check(w9["golem"] > w9["slime"] and w9["wolf"] > w1["wolf"], "сильные враги чаще к 9 волне")
 
 	var base: Dictionary = Enemies.TYPES["slime"]
 	var scaled := Enemies.scaled("slime", 5, 0)
@@ -201,6 +218,56 @@ func _test_enemies() -> void:
 
 	_check(Enemies.BASE_CHESTS == 1, "1 гарантированный сундук за волну")
 	_check(Enemies.CHEST_DROP_CHANCE > 0.0 and Enemies.CHEST_DROP_CHANCE < 0.5, "шанс доп. сундука разумный")
+
+
+func _test_chests_heal_speed() -> void:
+	print("-- Сундуки, лечение при уровне, скорость боя --")
+	var h := Hero.new()
+	var b := BattleScreen.new()
+	b.hero = h
+	b.wave = 1
+	b.wins = 0
+	b._ready()
+
+	# Сундук с врага: 1 случайный предмет сразу, без выбора
+	var before: int = h.inventory.size()
+	var c := b._spawn_chest(Vector2(500, 400), false)
+	b._on_chest_clicked(c)
+	_check(h.inventory.size() == before + 1, "сундук с врага даёт 1 предмет сразу")
+	_check(b._chests.is_empty(), "открытый сундук исчезает с поля")
+
+	# Финальный сундук: выбор 1 из 3 без повторов
+	var fc := b._spawn_chest(Vector2(620, 330), true)
+	b._on_chest_clicked(fc)
+	_check(b._current_choices.size() == Enemies.CHEST_CHOICES, "финальный сундук предлагает выбор 1 из 3")
+	var names := []
+	var unique := true
+	for it in b._current_choices:
+		if names.has(it.name):
+			unique = false
+		names.append(it.name)
+	_check(unique, "в финальном сундуке нет одинаковых предметов")
+	b._on_chest_choice(b._current_choices[0])
+	_check(h.inventory.size() == before + 2, "предмет из финального сундука попал в рюкзак")
+	_check(b._chests.is_empty(), "финальный сундук собран")
+
+	# Лечение при повышении уровня — частичное
+	b._hero_actor.hp = 10.0
+	var e := Actor.new()
+	e.setup("тест", {"hp": 1, "atk": 1, "def": 0, "spd": 1.0, "xp": 10, "type": "slime"}, Color.WHITE, "rect", 10.0, "enemy")
+	b._on_enemy_died(e)
+	var expected := 10.0 + b._hero_actor.max_hp * Hero.LEVEL_UP_HEAL
+	_check(absf(b._hero_actor.hp - expected) < 0.01, "уровень лечит часть HP (10 + %.0f%% макс.)" % (Hero.LEVEL_UP_HEAL * 100))
+	_check(b._hero_actor.hp < b._hero_actor.max_hp, "лечение при уровне — не полное")
+	e.free()
+
+	# Скорость боя x1/x2
+	b.set_speed(2.0)
+	_check(Engine.time_scale == 2.0, "ускорение боя x2")
+	b.set_speed(1.0)
+	_check(Engine.time_scale == 1.0, "возврат к скорости x1")
+
+	b.free()
 
 
 func _test_battle_sim() -> void:
@@ -221,25 +288,34 @@ func _test_battle_sim() -> void:
 		b._hero_actor.step(dt)
 		for e in b._enemies:
 			e.step(dt)
-		# Фаза сундуков: выбираем первый предмет, заодно проверяем отсутствие повторов
-		if b._state == "loot" and not b._current_choices.is_empty():
-			choices_seen += 1
-			var names := []
-			for it in b._current_choices:
-				if names.has(it.name):
-					choices_unique = false
-				names.append(it.name)
-			b._on_chest_choice(b._current_choices[0])
+		# Фаза сундуков: открываем все, у финального выбираем первый предмет
+		if b._state == "loot":
+			_open_field_chests(b)
+			if not b._current_choices.is_empty():
+				choices_seen += 1
+				var names := []
+				for it in b._current_choices:
+					if names.has(it.name):
+						choices_unique = false
+					names.append(it.name)
+				b._on_chest_choice(b._current_choices[0])
 		steps += 1
 
 	_check(b._state == "done", "бой завершился за %d шагов" % steps)
 	_check(b._hero_actor.alive, "герой выжил на волне 1")
 	_check(b._kills == b._enemy_total, "все враги повержены (%d/%d)" % [b._kills, b._enemy_total])
 	_check(h.xp > 0 or h.level > 1, "герой получил опыт")
-	_check(choices_seen >= 1, "открылся минимум 1 сундук (открыто: %d)" % choices_seen)
+	_check(choices_seen >= 1, "открылся финальный сундук (открыто: %d)" % choices_seen)
 	_check(choices_unique, "в сундуках нет одинаковых предметов")
-	_check(h.inventory.size() >= 1, "выбранный предмет попал в рюкзак (всего: %d)" % h.inventory.size())
+	_check(h.inventory.size() >= 1, "награды попали в рюкзак (всего: %d)" % h.inventory.size())
+	_check(b._chests.is_empty(), "бой завершился только после сбора всех сундуков")
 	b.free()
+
+
+## Открыть все сундуки на поле: вражеские — сразу, финальный — кликом (выбор появится).
+func _open_field_chests(b: BattleScreen) -> void:
+	for c in b._chests.duplicate():
+		b._on_chest_clicked(c)
 
 
 func _run_battle(h: Hero, wave: int, wins: int) -> BattleScreen:
@@ -255,8 +331,10 @@ func _run_battle(h: Hero, wave: int, wins: int) -> BattleScreen:
 		b._hero_actor.step(dt)
 		for e in b._enemies:
 			e.step(dt)
-		if b._state == "loot" and not b._current_choices.is_empty():
-			b._on_chest_choice(b._current_choices[0])
+		if b._state == "loot":
+			_open_field_chests(b)
+			if not b._current_choices.is_empty():
+				b._on_chest_choice(b._current_choices[0])
 		steps += 1
 	return b
 

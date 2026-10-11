@@ -1,22 +1,33 @@
 class_name BattleScreen
 extends Control
 
-## Экран боя. Герой стоит слева, враги — группой справа, никто не двигается.
-## Все атакуют на дистанции. Герой выбирает случайную цель и бьёт её до смерти,
-## затем выбирает следующую. Когда все враги повержены, открываются сундуки:
-## 1 гарантированный + шанс дополнительного с каждого врага.
-## Каждый сундук предлагает 3 разных предмета на выбор.
+## Экран боя в изометрии: земля ромбами, холмы и небо на фоне (фон позже будет
+## меняться от уровня). Герой стоит слева, враги — строем справа; строй зависит
+## от числа врагов. Все атакуют на дистанции. Герой выбирает случайную цель и
+## бьёт её до смерти, затем выбирает следующую.
+## С врагов с шансом падают сундуки (1 случайный предмет), после победы над всеми
+## врагами в центре появляется финальный сундук (выбор 1 из 3, награды реже).
+## Сундуки открываются кликом; волна завершается, только когда собраны все сундуки.
+## Бой можно ускорять: x1 / x2.
 
 signal wave_cleared
 signal hero_died
 signal boss_defeated
 
-const HERO_POS := Vector2(220, 500)
-const ENEMY_ORIGIN := Vector2(850, 400)  # левый верхний враг группы
-const ENEMY_COL_GAP := 135.0
-const ENEMY_ROW_GAP := 100.0
-const ENEMIES_PER_COL := 4
-const BOSS_POS := Vector2(1010, 470)
+const HERO_POS := Vector2(320, 460)
+const FORMATION_ANCHOR := Vector2(880, 420)  # центр строя врагов
+const BOSS_POS := Vector2(920, 450)
+const FINAL_CHEST_POS := Vector2(620, 330)
+
+## Строи по числу врагов: смещения от FORMATION_ANCHOR.
+## Один враг — напротив героя; больше — разные построения, не колонной.
+const FORMATIONS := {
+	1: [Vector2(0, 40)],
+	2: [Vector2(-40, -20), Vector2(40, 60)],
+	3: [Vector2(0, -60), Vector2(-60, 30), Vector2(60, 70)],
+	4: [Vector2(0, -80), Vector2(-70, -10), Vector2(70, 20), Vector2(0, 90)],
+	5: [Vector2(0, -100), Vector2(-80, -30), Vector2(80, -10), Vector2(-40, 70), Vector2(50, 90)],
+}
 
 ## Входные данные (заполняет Main до добавления на сцену)
 var hero: Hero
@@ -28,46 +39,36 @@ var _state := "fight"  # "fight" | "loot" | "done"
 var _kills := 0
 var _enemy_total := 0
 var _boss_dead := false
+var _speed := 1.0
 
 var _world: Node2D
 var _hero_actor: Actor
 var _enemies := []
 
-# Сундуки
-var _pending_chests := 0
-var _chest_total := 0
-var _chest_index := 0
+# Сундуки на поле боя (узлы Chest)
+var _chests := []
 var _current_choices := []
 var _chest_ui: Control = null
 
 var _wave_label: Label
 var _kills_label: Label
 var _chests_label: Label
+var _hint_label: Label
+var _speed_btn: Button
 var _center_label: Label
 
 
 func _ready() -> void:
 	_rng.randomize()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	_build_background()
+	add_child(Backdrop.new())
 	_build_hud()
 	_world = Node2D.new()
+	_world.y_sort_enabled = true  # глубина: ниже на экране — ближе к зрителю
 	add_child(_world)
 	_spawn_hero()
 	_spawn_enemies()
 	_update_hud()
-
-
-func _build_background() -> void:
-	var sky := ColorRect.new()
-	sky.color = Color(0.72, 0.84, 0.94)
-	sky.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(sky)
-	var ground := ColorRect.new()
-	ground.color = Color(0.62, 0.78, 0.55)
-	ground.set_anchors_preset(Control.PRESET_FULL_RECT)
-	ground.anchor_top = 0.72
-	add_child(ground)
 
 
 func _build_hud() -> void:
@@ -96,11 +97,16 @@ func _build_hud() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hud.add_child(spacer)
 
-	var hint := Label.new()
-	hint.text = "Бой идёт автоматически"
-	hint.add_theme_font_size_override("font_size", 16)
-	hint.modulate = Color(1, 1, 1, 0.8)
-	hud.add_child(hint)
+	_speed_btn = Button.new()
+	_speed_btn.text = "Скорость: x1"
+	_speed_btn.pressed.connect(_on_speed_pressed)
+	hud.add_child(_speed_btn)
+
+	_hint_label = Label.new()
+	_hint_label.text = "Бой идёт автоматически"
+	_hint_label.add_theme_font_size_override("font_size", 16)
+	_hint_label.modulate = Color(1, 1, 1, 0.8)
+	hud.add_child(_hint_label)
 
 	_center_label = Label.new()
 	_center_label.set_anchors_preset(Control.PRESET_CENTER)
@@ -133,8 +139,9 @@ func hero_hp() -> float:
 
 
 func _spawn_enemies() -> void:
-	var comp := Enemies.wave_composition(wave)
+	var comp := Enemies.wave_composition(wave, _rng)
 	_enemy_total = comp.size()
+	var formation: Array = FORMATIONS[mini(comp.size(), Enemies.MAX_ENEMIES)]
 	for i in comp.size():
 		var type: String = comp[i]
 		var stats := Enemies.scaled(type, wave, wins)
@@ -144,9 +151,7 @@ func _spawn_enemies() -> void:
 		if type == "boss":
 			e.position = BOSS_POS
 		else:
-			var col := i / ENEMIES_PER_COL
-			var row := i % ENEMIES_PER_COL
-			e.position = ENEMY_ORIGIN + Vector2(col * ENEMY_COL_GAP, row * ENEMY_ROW_GAP)
+			e.position = FORMATION_ANCHOR + formation[i]
 		e.engaged = true
 		e.target = _hero_actor
 		e.died.connect(_on_enemy_died)
@@ -177,7 +182,7 @@ func _update_hud() -> void:
 	else:
 		_wave_label.text = "Волна %d / %d" % [wave, Enemies.TOTAL_WAVES]
 	_kills_label.text = "Побеждено: %d / %d" % [_kills, _enemy_total]
-	_chests_label.text = "Сундуки: %d" % _pending_chests
+	_chests_label.text = "Сундуки: %d" % _chests.size()
 
 
 func _process(delta: float) -> void:
@@ -198,19 +203,20 @@ func _on_enemy_died(e: Actor) -> void:
 	# Опыт и уровни
 	var xp: int = int(e.stats.get("xp", 1))
 	var levels := hero.add_xp(xp)
-	_spawn_popup("+%d опыта" % xp, e.position + Vector2(-30, -60), Color(0.95, 0.9, 0.4), 18)
+	_spawn_popup("+%d опыта" % xp, e.position + Vector2(-30, -e.radius * 2.0 - 40), Color(0.95, 0.9, 0.4), 18)
 	if levels > 0:
-		# Новый уровень: характеристики пересчитываются, герой полностью исцеляется
+		# Новый уровень: характеристики пересчитываются, герой лечится на часть от максимума
 		_hero_actor.stats = hero.get_stats()
 		_hero_actor.max_hp = int(_hero_actor.stats["hp"])
-		_hero_actor.hp = _hero_actor.max_hp
+		var healed: float = _hero_actor.max_hp * Hero.LEVEL_UP_HEAL
+		_hero_actor.hp = minf(_hero_actor.max_hp, _hero_actor.hp + healed)
 		_hero_actor.queue_redraw()
-		_spawn_popup("Уровень %d! +%d очка характеристик" % [hero.level, Hero.POINTS_PER_LEVEL], _hero_actor.position + Vector2(-140, -110), Color(0.5, 1.0, 0.6), 24)
+		_spawn_popup("Уровень %d! +%d HP, +%d очка характеристик" % [hero.level, int(healed), Hero.POINTS_PER_LEVEL], _hero_actor.position + Vector2(-160, -_hero_actor.radius * 2.0 - 70), Color(0.5, 1.0, 0.6), 24)
 
-	# Шанс дополнительного сундука
+	# Шанс сундука с врага: остаётся лежать на месте погибшего, открывается кликом
 	if _rng.randf() < Enemies.CHEST_DROP_CHANCE:
-		_pending_chests += 1
-		_spawn_popup("Выпал сундук!", e.position + Vector2(-30, -95), Color(0.95, 0.8, 0.3), 20)
+		_spawn_chest(e.position, false)
+		_spawn_popup("Выпал сундук!", e.position + Vector2(-30, -e.radius * 2.0 - 75), Color(0.95, 0.8, 0.3), 20)
 
 	# Герой переключается на следующую случайную цель
 	if _hero_actor.target == e:
@@ -234,7 +240,7 @@ func _on_hero_died(_a: Actor) -> void:
 
 func _on_actor_damaged(a: Actor, amount: int) -> void:
 	var col := Color(1, 0.45, 0.4) if a.team == "hero" else Color(1, 1, 1)
-	_spawn_popup("-%d" % amount, a.position + Vector2(randf_range(-14, 14), -a.radius - 26), col, 16)
+	_spawn_popup("-%d" % amount, a.position + Vector2(randf_range(-14, 14), -a.radius * 2.0 - 26), col, 16)
 
 
 ## «Снаряд»: точка летит от атакующего к цели.
@@ -244,37 +250,82 @@ func _on_actor_attacked(src: Actor, dst: Actor) -> void:
 	var dot := ColorRect.new()
 	dot.size = Vector2(10, 10)
 	dot.color = Color(1.0, 0.85, 0.3) if src.team == "hero" else Color(0.9, 0.35, 0.3)
-	dot.position = src.position - Vector2(5, 5)
+	dot.position = src.position + Vector2(-5, -src.radius - 5)
 	_world.add_child(dot)
 	var tween := create_tween()
-	tween.tween_property(dot, "position", dst.position - Vector2(5, 5), 0.18)
+	tween.tween_property(dot, "position", dst.position + Vector2(-5, -dst.radius - 5), 0.18)
 	tween.tween_callback(dot.queue_free)
 
 
+# ---------- Ускорение боя ----------
+
+func _on_speed_pressed() -> void:
+	set_speed(2.0 if _speed < 2.0 else 1.0)
+
+
+## Скорость боя: x1 или x2 (масштабирует время движка, включая твины и таймеры).
+func set_speed(mult: float) -> void:
+	_speed = mult
+	Engine.time_scale = mult
+	if is_instance_valid(_speed_btn):
+		_speed_btn.text = "Скорость: x%d" % int(mult)
+
+
+func _exit_tree() -> void:
+	Engine.time_scale = 1.0
+
+
 # ---------- Сундуки ----------
+
+## Ставит сундук на поле боя. is_final — финальный сундук волны (ценные награды).
+func _spawn_chest(pos: Vector2, is_final: bool) -> Chest:
+	var chest := Chest.new()
+	chest.is_final = is_final
+	chest.position = pos
+	chest.clicked.connect(_on_chest_clicked)
+	_chests.append(chest)
+	_world.add_child(chest)
+	_update_hud()
+	return chest
+
 
 func _start_loot_phase() -> void:
 	if _state != "fight":
 		return
 	_state = "loot"
 	_hero_actor.engaged = false
-	_pending_chests += Enemies.BASE_CHESTS
-	_chest_total = _pending_chests
-	_chest_index = 0
+	# Финальный сундук — в центре экрана, награды в нём ценнее
+	_spawn_chest(FINAL_CHEST_POS, true)
+	_hint_label.text = "Победа! Кликай по сундукам, чтобы забрать награды"
 	_update_hud()
-	_open_next_chest()
 
 
-func _open_next_chest() -> void:
-	if _pending_chests <= 0:
-		_finish_wave_or_boss()
+## Клик по сундуку: вражеский выдаёт 1 случайный предмет сразу,
+## финальный открывает выбор 1 из 3.
+func _on_chest_clicked(chest: Chest) -> void:
+	if not _chests.has(chest):
 		return
-	_chest_index += 1
-	# 3 предмета на выбор, без повторов внутри сундука
+	if chest.is_final:
+		if not _current_choices.is_empty():
+			return  # уже открыт, ждёт выбора предмета
+		_open_final_chest()
+		return
+	var pos: Vector2 = chest.position
+	_chests.erase(chest)
+	chest.queue_free()
+	var item := Item.generate(_rng, -1, true)
+	hero.inventory.append(item)
+	_spawn_popup("Найдено: %s (%s)" % [item.name, item.rarity_name()], pos + Vector2(-70, -70), item.rarity_color(), 18)
+	_update_hud()
+	_check_loot_done()
+
+
+## Финальный сундук: 3 предмета на выбор, без повторов, редкость выше обычной.
+func _open_final_chest() -> void:
 	_current_choices = []
 	var taken := []
 	for i in Enemies.CHEST_CHOICES:
-		var item := Item.generate(_rng, -1, true, taken)
+		var item := Item.generate(_rng, -1, true, taken, true)
 		taken.append(item.name)
 		_current_choices.append(item)
 	_show_chest_ui()
@@ -302,7 +353,7 @@ func _show_chest_ui() -> void:
 	_chest_ui.add_child(box)
 
 	var title := Label.new()
-	title.text = "Сундук %d из %d — выбери предмет" % [_chest_index, _chest_total]
+	title.text = "Финальный сундук — выбери предмет"
 	title.add_theme_font_size_override("font_size", 24)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
@@ -317,15 +368,25 @@ func _show_chest_ui() -> void:
 		box.add_child(btn)
 
 
+## Выбор предмета в финальном сундуке.
 func _on_chest_choice(item: Item) -> void:
 	hero.inventory.append(item)
 	_current_choices = []
 	if _chest_ui != null:
 		_chest_ui.queue_free()
 		_chest_ui = null
-	_pending_chests -= 1
+	for c in _chests.duplicate():
+		if c.is_final:
+			_chests.erase(c)
+			c.queue_free()
 	_update_hud()
-	_open_next_chest()
+	_check_loot_done()
+
+
+## Волна завершается, только когда открыты все сундуки и награды получены.
+func _check_loot_done() -> void:
+	if _state == "loot" and _chests.is_empty():
+		_finish_wave_or_boss()
 
 
 # ---------- Финалы ----------
@@ -370,3 +431,94 @@ func _spawn_popup(text: String, pos: Vector2, color: Color, size: int) -> void:
 	tween.tween_property(lbl, "position:y", pos.y - 60.0, 1.2)
 	tween.tween_property(lbl, "modulate:a", 0.0, 1.2)
 	tween.chain().tween_callback(lbl.queue_free)
+
+
+# ---------- Внутренние классы ----------
+
+class Chest:
+	extends Area2D
+	## Сундук на поле боя: рисуется кодом, открывается кликом.
+	## Финальный сундук волны крупнее и с золотой окантовкой.
+
+	signal clicked(chest)
+
+	var is_final := false
+	var base_size := 44.0
+
+
+	func _ready() -> void:
+		var s := base_size * (1.4 if is_final else 1.0)
+		var shape := CollisionShape2D.new()
+		var rect := RectangleShape2D.new()
+		rect.size = Vector2(s, s)
+		shape.shape = rect
+		shape.position = Vector2(0, -s * 0.5)
+		add_child(shape)
+		input_event.connect(_on_input_event)
+
+
+	func _on_input_event(_viewport: Node, event: InputEvent, _shape_idx: int) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			clicked.emit(self)
+
+
+	func _draw() -> void:
+		var s := base_size * (1.4 if is_final else 1.0)
+		var wood := Color(0.55, 0.38, 0.2)
+		var wood_dark := Color(0.42, 0.28, 0.14)
+		var trim := Color(0.95, 0.8, 0.3) if is_final else Color(0.7, 0.7, 0.72)
+		if is_final:
+			draw_circle(Vector2(0, -s * 0.5), s * 0.9, Color(1.0, 0.9, 0.4, 0.18))
+		# Тень на земле
+		draw_set_transform(Vector2(0, 2), 0.0, Vector2(1.0, 0.45))
+		draw_circle(Vector2.ZERO, s * 0.55, Color(0, 0, 0, 0.18))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		# Корпус, крышка и замок
+		var body := Rect2(-s / 2, -s * 0.6, s, s * 0.6)
+		var lid := Rect2(-s / 2, -s, s, s * 0.45)
+		draw_rect(body, wood)
+		draw_rect(lid, wood_dark)
+		draw_rect(body, trim, false, 2.0)
+		draw_rect(lid, trim, false, 2.0)
+		draw_rect(Rect2(-s * 0.08, -s * 0.68, s * 0.16, s * 0.22), trim)
+
+
+class Backdrop:
+	extends Node2D
+	## Фон экрана боя: небо, солнце, холмы и изометрическая земля ромбами.
+	## Позже фон будет меняться в зависимости от уровня.
+
+	const TILE_W := 96.0
+	const TILE_H := 48.0
+	const GROUND_ORIGIN := Vector2(640, 310)
+	const GROUND_ROWS := 10
+	const GROUND_COLS := 16
+
+
+	func _draw() -> void:
+		# Небо
+		draw_rect(Rect2(0, 0, 1280, 300), Color(0.66, 0.82, 0.95))
+		draw_rect(Rect2(0, 300, 1280, 160), Color(0.78, 0.89, 0.96))
+		# Солнце
+		draw_circle(Vector2(1080, 110), 60, Color(1.0, 0.95, 0.6, 0.25))
+		draw_circle(Vector2(1080, 110), 44, Color(1.0, 0.95, 0.62))
+		# Дальние холмы
+		draw_colored_polygon(PackedVector2Array([
+			Vector2(0, 430), Vector2(180, 300), Vector2(380, 405), Vector2(560, 295),
+			Vector2(760, 410), Vector2(980, 315), Vector2(1280, 425),
+			Vector2(1280, 470), Vector2(0, 470),
+		]), Color(0.53, 0.7, 0.6))
+		# Основа земли (чтобы ромбы не оставляли просветов по краям)
+		draw_rect(Rect2(0, 430, 1280, 290), Color(0.56, 0.73, 0.5))
+		# Изометрическая плитка
+		for row in GROUND_ROWS:
+			for col in GROUND_COLS:
+				var p := GROUND_ORIGIN + Vector2((col - row) * TILE_W / 2, (col + row) * TILE_H / 2)
+				var shade := 0.03 * ((row + col) % 2)
+				var c := Color(0.55 + shade, 0.74 + shade, 0.49 + shade)
+				draw_colored_polygon(PackedVector2Array([
+					p + Vector2(0, -TILE_H / 2),
+					p + Vector2(TILE_W / 2, 0),
+					p + Vector2(0, TILE_H / 2),
+					p + Vector2(-TILE_W / 2, 0),
+				]), c)

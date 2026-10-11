@@ -87,20 +87,25 @@ func hp_fraction() -> float:
 
 
 func _draw() -> void:
+	# Тень на земле (position — точка, где боец стоит)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, 0.45))
+	draw_circle(Vector2.ZERO, radius * 0.9, Color(0, 0, 0, 0.18))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	var c := Color.WHITE if _flash > 0.0 else body_color
 	if not alive:
 		c = c.darkened(0.6)
+	var off := Vector2(0, -radius)  # тело над точкой опоры
 	match shape:
 		"circle":
-			draw_circle(Vector2.ZERO, radius, c)
+			draw_circle(off, radius, c)
 		"triangle":
 			draw_colored_polygon(PackedVector2Array([
-				Vector2(-radius, radius * 0.7),
-				Vector2(radius, radius * 0.7),
-				Vector2(0.0, -radius),
+				off + Vector2(-radius, radius * 0.7),
+				off + Vector2(radius, radius * 0.7),
+				off + Vector2(0.0, -radius),
 			]), c)
 		_:
-			draw_rect(Rect2(-radius, -radius, radius * 2.0, radius * 2.0), c)
+			draw_rect(Rect2(off - Vector2(radius, radius), Vector2(radius * 2.0, radius * 2.0)), c)
 	if alive:
 		_draw_hp_bar()
 
@@ -108,7 +113,7 @@ func _draw() -> void:
 func _draw_hp_bar() -> void:
 	var w := radius * 2.0
 	var h := 7.0
-	var y := -radius - 16.0
+	var y := -radius * 2.0 - 16.0
 	draw_rect(Rect2(-radius, y, w, h), Color(0.12, 0.12, 0.14))
 	var fill := Color(0.35, 0.85, 0.4) if team == "hero" else Color(0.9, 0.32, 0.32)
 	draw_rect(Rect2(-radius, y, w * hp_fraction(), h), fill)
