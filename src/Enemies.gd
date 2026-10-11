@@ -54,8 +54,8 @@ static func scaled(type: String, wave: int, wins: int) -> Dictionary:
 	return base
 
 
-## Число сундуков на волне.
-static func chest_count(wave: int) -> int:
-	if wave >= TOTAL_WAVES:
-		return 1
-	return 2 if wave % 3 == 0 else 1
+## Сундуки: 1 гарантированный в конце волны + небольшой шанс с каждого врага.
+const BASE_CHESTS := 1
+const CHEST_DROP_CHANCE := 0.15
+## Сколько предметов на выбор предлагает сундук.
+const CHEST_CHOICES := 3

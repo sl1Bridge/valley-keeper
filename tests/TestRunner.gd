@@ -129,7 +129,8 @@ func _test_enemies() -> void:
 	var ng := Enemies.scaled("slime", 1, 2)
 	_check(int(ng["hp"]) > int(base["hp"]), "новый заход сложнее")
 
-	_check(Enemies.chest_count(1) == 1 and Enemies.chest_count(3) == 2, "число сундуков по волнам")
+	_check(Enemies.BASE_CHESTS == 1, "1 гарантированный сундук за волну")
+	_check(Enemies.CHEST_DROP_CHANCE > 0.0 and Enemies.CHEST_DROP_CHANCE < 0.5, "шанс доп. сундука разумный")
 
 
 func _test_battle_sim() -> void:
@@ -143,18 +144,31 @@ func _test_battle_sim() -> void:
 
 	var dt := 0.05
 	var steps := 0
+	var choices_seen := 0
+	var choices_unique := true
 	while b._state != "done" and steps < 6000:
 		b.step(dt)
 		b._hero_actor.step(dt)
 		for e in b._enemies:
 			e.step(dt)
+		# Фаза сундуков: выбираем первый предмет, заодно проверяем отсутствие повторов
+		if b._state == "loot" and not b._current_choices.is_empty():
+			choices_seen += 1
+			var names := []
+			for it in b._current_choices:
+				if names.has(it.name):
+					choices_unique = false
+				names.append(it.name)
+			b._on_chest_choice(b._current_choices[0])
 		steps += 1
 
 	_check(b._state == "done", "бой завершился за %d шагов" % steps)
 	_check(b._hero_actor.alive, "герой выжил на волне 1")
 	_check(b._kills == b._enemy_total, "все враги повержены (%d/%d)" % [b._kills, b._enemy_total])
 	_check(h.xp > 0 or h.level > 1, "герой получил опыт")
-	_check(h.inventory.size() >= 1, "сундук дал предмет (в рюкзаке: %d)" % h.inventory.size())
+	_check(choices_seen >= 1, "открылся минимум 1 сундук (открыто: %d)" % choices_seen)
+	_check(choices_unique, "в сундуках нет одинаковых предметов")
+	_check(h.inventory.size() >= 1, "выбранный предмет попал в рюкзак (всего: %d)" % h.inventory.size())
 	b.free()
 
 
@@ -171,6 +185,8 @@ func _run_battle(h: Hero, wave: int, wins: int) -> BattleScreen:
 		b._hero_actor.step(dt)
 		for e in b._enemies:
 			e.step(dt)
+		if b._state == "loot" and not b._current_choices.is_empty():
+			b._on_chest_choice(b._current_choices[0])
 		steps += 1
 	return b
 

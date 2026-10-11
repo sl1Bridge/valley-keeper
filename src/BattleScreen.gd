@@ -1,20 +1,22 @@
 class_name BattleScreen
 extends Control
 
-## Экран боя: герой сам идёт слева направо, враги бросаются навстречу,
-## бой идёт автоматически, сундуки открываются по пути, лут падает в рюкзак.
+## Экран боя. Герой стоит слева, враги — группой справа, никто не двигается.
+## Все атакуют на дистанции. Герой выбирает случайную цель и бьёт её до смерти,
+## затем выбирает следующую. Когда все враги повержены, открываются сундуки:
+## 1 гарантированный + шанс дополнительного с каждого врага.
+## Каждый сундук предлагает 3 разных предмета на выбор.
 
 signal wave_cleared
 signal hero_died
 signal boss_defeated
 
-const GROUND_Y := 560.0
-const HERO_START_X := 120.0
-const FIRST_ENEMY_X := 720.0
-const ENEMY_GAP := 300.0
-const AGGRO_RANGE := 320.0
-const HERO_WALK_SPEED := 140.0
-const DROP_CHANCE := 0.25
+const HERO_POS := Vector2(220, 500)
+const ENEMY_ORIGIN := Vector2(850, 400)  # левый верхний враг группы
+const ENEMY_COL_GAP := 135.0
+const ENEMY_ROW_GAP := 100.0
+const ENEMIES_PER_COL := 4
+const BOSS_POS := Vector2(1010, 470)
 
 ## Входные данные (заполняет Main до добавления на сцену)
 var hero: Hero
@@ -22,32 +24,26 @@ var wave := 1
 var wins := 0
 
 var _rng := RandomNumberGenerator.new()
-var _state := "walk"  # "walk" | "done"
+var _state := "fight"  # "fight" | "loot" | "done"
 var _kills := 0
 var _enemy_total := 0
+var _boss_dead := false
 
 var _world: Node2D
 var _hero_actor: Actor
 var _enemies := []
-var _chests := []
-var _opening_chest = null
-var _open_timer := 0.0
+
+# Сундуки
+var _pending_chests := 0
+var _chest_total := 0
+var _chest_index := 0
+var _current_choices := []
+var _chest_ui: Control = null
 
 var _wave_label: Label
 var _kills_label: Label
+var _chests_label: Label
 var _center_label: Label
-
-
-## Сундук: рисованный золотой ящик.
-class Chest:
-	extends Node2D
-	var opened := false
-
-	func _draw() -> void:
-		var c := Color(0.85, 0.65, 0.2) if not opened else Color(0.45, 0.38, 0.25)
-		draw_rect(Rect2(-20, -30, 40, 30), c)
-		draw_rect(Rect2(-20, -30, 40, 10), c.lightened(0.2))
-		draw_rect(Rect2(-4, -22, 8, 10), Color(0.3, 0.25, 0.15))
 
 
 func _ready() -> void:
@@ -59,7 +55,6 @@ func _ready() -> void:
 	add_child(_world)
 	_spawn_hero()
 	_spawn_enemies()
-	_spawn_chests()
 	_update_hud()
 
 
@@ -92,12 +87,17 @@ func _build_hud() -> void:
 	_kills_label.add_theme_font_size_override("font_size", 22)
 	hud.add_child(_kills_label)
 
+	_chests_label = Label.new()
+	_chests_label.add_theme_font_size_override("font_size", 22)
+	_chests_label.modulate = Color(0.95, 0.8, 0.3)
+	hud.add_child(_chests_label)
+
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hud.add_child(spacer)
 
 	var hint := Label.new()
-	hint.text = "Бой идёт автоматически — наблюдай и готовь следующую сборку"
+	hint.text = "Бой идёт автоматически"
 	hint.add_theme_font_size_override("font_size", 16)
 	hint.modulate = Color(1, 1, 1, 0.8)
 	hud.add_child(hint)
@@ -112,12 +112,12 @@ func _build_hud() -> void:
 
 func _spawn_hero() -> void:
 	_hero_actor = Actor.new()
-	var stats := hero.get_stats()
-	stats["move"] = HERO_WALK_SPEED
-	_hero_actor.setup("Герой", stats, Color(0.25, 0.45, 0.9), "rect", 30.0, "hero")
-	_hero_actor.position = Vector2(HERO_START_X, GROUND_Y)
+	_hero_actor.setup("Герой", hero.get_stats(), Color(0.25, 0.45, 0.9), "rect", 30.0, "hero")
+	_hero_actor.position = HERO_POS
+	_hero_actor.engaged = true
 	_hero_actor.died.connect(_on_hero_died)
 	_hero_actor.damaged.connect(_on_actor_damaged)
+	_hero_actor.attacked.connect(_on_actor_attacked)
 	_world.add_child(_hero_actor)
 
 
@@ -130,22 +130,34 @@ func _spawn_enemies() -> void:
 		var def: Dictionary = Enemies.TYPES[type]
 		var e := Actor.new()
 		e.setup(stats["name"], stats, def["color"], def["shape"], def["size"], "enemy")
-		e.position = Vector2(FIRST_ENEMY_X + i * ENEMY_GAP, GROUND_Y)
+		if type == "boss":
+			e.position = BOSS_POS
+		else:
+			var col := i / ENEMIES_PER_COL
+			var row := i % ENEMIES_PER_COL
+			e.position = ENEMY_ORIGIN + Vector2(col * ENEMY_COL_GAP, row * ENEMY_ROW_GAP)
+		e.engaged = true
+		e.target = _hero_actor
 		e.died.connect(_on_enemy_died)
 		e.damaged.connect(_on_actor_damaged)
+		e.attacked.connect(_on_actor_attacked)
 		_world.add_child(e)
 		_enemies.append(e)
+	_pick_hero_target()
 
 
-func _spawn_chests() -> void:
-	var count := Enemies.chest_count(wave)
-	var last_x: float = FIRST_ENEMY_X + maxi(0, _enemy_total - 1) * ENEMY_GAP
-	for i in count:
-		var chest := Chest.new()
-		var frac := float(i + 1) / float(count + 1)
-		chest.position = Vector2(lerpf(560.0, last_x + 150.0, frac), GROUND_Y + 15)
-		_world.add_child(chest)
-		_chests.append(chest)
+## Герой выбирает случайную живую цель.
+func _pick_hero_target() -> void:
+	var alive := []
+	for e in _enemies:
+		if e.alive:
+			alive.append(e)
+	if alive.is_empty():
+		_hero_actor.target = null
+		_hero_actor.engaged = false
+	else:
+		_hero_actor.target = alive[_rng.randi_range(0, alive.size() - 1)]
+		_hero_actor.engaged = true
 
 
 func _update_hud() -> void:
@@ -154,111 +166,57 @@ func _update_hud() -> void:
 	else:
 		_wave_label.text = "Волна %d / %d" % [wave, Enemies.TOTAL_WAVES]
 	_kills_label.text = "Побеждено: %d / %d" % [_kills, _enemy_total]
+	_chests_label.text = "Сундуки: %d" % _pending_chests
 
 
 func _process(delta: float) -> void:
 	step(delta)
 
 
-## Один шаг логики боя. Вынесен отдельно, чтобы можно было прогонять в тестах.
-func step(delta: float) -> void:
-	if _state == "done":
+## Один шаг логики боя. Вынесен отдельно, чтобы прогонять в тестах.
+func step(_delta: float) -> void:
+	if _state != "fight":
 		return
-
-	# Таймер открытия сундука
-	if _opening_chest != null:
-		_open_timer -= delta
-		if _open_timer <= 0.0:
-			_finish_open_chest()
-
-	# Враги: подходят и вступают в бой
-	for e in _enemies:
-		if not e.alive or e.engaged or not _hero_actor.alive:
-			continue
-		var dist: float = e.position.x - _hero_actor.position.x
-		if dist < AGGRO_RANGE:
-			e.position.x -= e.move_speed * delta
-		if dist <= _hero_actor.radius + e.radius + 6.0:
-			_engage(e)
-
-	# Герой идёт вперёд, если ни с кем не дерётся и не открывает сундук
-	if _hero_actor.alive and not _hero_actor.engaged and _opening_chest == null:
-		_hero_actor.position.x += HERO_WALK_SPEED * delta
-		_check_chests()
-
-	# Все враги повержены — волна пройдена
 	if _kills >= _enemy_total:
-		_finish_wave()
-
-
-func _engage(e: Actor) -> void:
-	e.engaged = true
-	e.target = _hero_actor
-	if _hero_actor.target == null or not _hero_actor.target.alive:
-		_hero_actor.target = e
-		_hero_actor.engaged = true
-
-
-func _check_chests() -> void:
-	for chest in _chests:
-		if not chest.opened and absf(_hero_actor.position.x - chest.position.x) < 36.0:
-			_opening_chest = chest
-			_open_timer = 0.7
-			return
-
-
-func _finish_open_chest() -> void:
-	var chest = _opening_chest
-	_opening_chest = null
-	chest.opened = true
-	chest.queue_redraw()
-	var item := Item.generate(_rng, -1, true)
-	hero.inventory.append(item)
-	_spawn_popup("Сундук: %s (%s)!" % [item.name, item.rarity_name()], chest.position + Vector2(-80, -70), item.rarity_color(), 20)
+		_start_loot_phase()
 
 
 func _on_enemy_died(e: Actor) -> void:
 	_kills += 1
-	_update_hud()
 
 	# Опыт и уровни
-	var levels := hero.add_xp(int(e.stats.get("xp", 1)))
-	_spawn_popup("+%d опыта" % int(e.stats.get("xp", 1)), e.position + Vector2(-30, -60), Color(0.95, 0.9, 0.4), 18)
+	var xp: int = int(e.stats.get("xp", 1))
+	var levels := hero.add_xp(xp)
+	_spawn_popup("+%d опыта" % xp, e.position + Vector2(-30, -60), Color(0.95, 0.9, 0.4), 18)
 	if levels > 0:
 		# Новый уровень: характеристики пересчитываются, герой полностью исцеляется
-		var stats := hero.get_stats()
-		stats["move"] = HERO_WALK_SPEED
-		_hero_actor.stats = stats
-		_hero_actor.max_hp = int(stats["hp"])
+		_hero_actor.stats = hero.get_stats()
+		_hero_actor.max_hp = int(_hero_actor.stats["hp"])
 		_hero_actor.hp = _hero_actor.max_hp
 		_hero_actor.queue_redraw()
 		_spawn_popup("Уровень %d! +%d очка характеристик" % [hero.level, Hero.POINTS_PER_LEVEL], _hero_actor.position + Vector2(-140, -110), Color(0.5, 1.0, 0.6), 24)
 
-	# Дроп предмета
-	if _rng.randf() < DROP_CHANCE:
-		var item := Item.generate(_rng)
-		hero.inventory.append(item)
-		_spawn_popup("Дроп: %s (%s)" % [item.name, item.rarity_name()], e.position + Vector2(-60, -90), item.rarity_color(), 18)
+	# Шанс дополнительного сундука
+	if _rng.randf() < Enemies.CHEST_DROP_CHANCE:
+		_pending_chests += 1
+		_spawn_popup("Выпал сундук!", e.position + Vector2(-30, -95), Color(0.95, 0.8, 0.3), 20)
 
-	# Перенацеливание героя на следующего врага в ближнем бою
+	# Герой переключается на следующую случайную цель
 	if _hero_actor.target == e:
-		_hero_actor.target = null
-		_hero_actor.engaged = false
-		for other in _enemies:
-			if other.alive and other.engaged:
-				_hero_actor.target = other
-				_hero_actor.engaged = true
-				break
+		_pick_hero_target()
 
-	# Босс повержен — отдельный финал
 	if e.stats.get("type", "") == "boss":
-		_finish_boss()
+		_boss_dead = true
+
+	_update_hud()
 
 
 func _on_hero_died(_a: Actor) -> void:
 	if _state == "done":
 		return
 	_state = "done"
+	for e in _enemies:
+		e.engaged = false
 	_show_center("Герой пал…")
 	_emit_deferred(hero_died)
 
@@ -268,20 +226,109 @@ func _on_actor_damaged(a: Actor, amount: int) -> void:
 	_spawn_popup("-%d" % amount, a.position + Vector2(randf_range(-14, 14), -a.radius - 26), col, 16)
 
 
-func _finish_wave() -> void:
+## «Снаряд»: точка летит от атакующего к цели.
+func _on_actor_attacked(src: Actor, dst: Actor) -> void:
+	if not is_inside_tree():
+		return
+	var dot := ColorRect.new()
+	dot.size = Vector2(10, 10)
+	dot.color = Color(1.0, 0.85, 0.3) if src.team == "hero" else Color(0.9, 0.35, 0.3)
+	dot.position = src.position - Vector2(5, 5)
+	_world.add_child(dot)
+	var tween := create_tween()
+	tween.tween_property(dot, "position", dst.position - Vector2(5, 5), 0.18)
+	tween.tween_callback(dot.queue_free)
+
+
+# ---------- Сундуки ----------
+
+func _start_loot_phase() -> void:
+	if _state != "fight":
+		return
+	_state = "loot"
+	_hero_actor.engaged = false
+	_pending_chests += Enemies.BASE_CHESTS
+	_chest_total = _pending_chests
+	_chest_index = 0
+	_update_hud()
+	_open_next_chest()
+
+
+func _open_next_chest() -> void:
+	if _pending_chests <= 0:
+		_finish_wave_or_boss()
+		return
+	_chest_index += 1
+	# 3 предмета на выбор, без повторов внутри сундука
+	_current_choices = []
+	var taken := []
+	for i in Enemies.CHEST_CHOICES:
+		var item := Item.generate(_rng, -1, true, taken)
+		taken.append(item.name)
+		_current_choices.append(item)
+	_show_chest_ui()
+
+
+func _show_chest_ui() -> void:
+	if _chest_ui != null:
+		_chest_ui.queue_free()
+	_chest_ui = PanelContainer.new()
+	_chest_ui.set_anchors_preset(Control.PRESET_CENTER)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.13, 0.14, 0.18, 0.97)
+	style.set_corner_radius_all(12)
+	style.set_border_width_all(2)
+	style.border_color = Color(0.85, 0.65, 0.2)
+	style.content_margin_left = 28
+	style.content_margin_right = 28
+	style.content_margin_top = 22
+	style.content_margin_bottom = 22
+	_chest_ui.add_theme_stylebox_override("panel", style)
+	add_child(_chest_ui)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	_chest_ui.add_child(box)
+
+	var title := Label.new()
+	title.text = "Сундук %d из %d — выбери предмет" % [_chest_index, _chest_total]
+	title.add_theme_font_size_override("font_size", 24)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+
+	for item in _current_choices:
+		var btn := Button.new()
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.custom_minimum_size = Vector2(360, 56)
+		btn.text = "%s (%s)\n%s · %s" % [item.name, item.rarity_name(), item.slot_name(), item.bonuses_text()]
+		btn.add_theme_color_override("font_color", item.rarity_color())
+		btn.pressed.connect(_on_chest_choice.bind(item))
+		box.add_child(btn)
+
+
+func _on_chest_choice(item: Item) -> void:
+	hero.inventory.append(item)
+	_current_choices = []
+	if _chest_ui != null:
+		_chest_ui.queue_free()
+		_chest_ui = null
+	_pending_chests -= 1
+	_update_hud()
+	_open_next_chest()
+
+
+# ---------- Финалы ----------
+
+func _finish_wave_or_boss() -> void:
 	if _state == "done":
 		return
 	_state = "done"
-	_show_center("Волна пройдена!")
-	_emit_deferred(wave_cleared)
-
-
-func _finish_boss() -> void:
-	if _state == "done":
-		return
-	_state = "done"
-	_show_center("Босс повержен!")
-	_emit_deferred(boss_defeated)
+	if _boss_dead:
+		_show_center("Босс повержен!")
+		_emit_deferred(boss_defeated)
+	else:
+		_show_center("Волна пройдена!")
+		_emit_deferred(wave_cleared)
 
 
 func _show_center(text: String) -> void:
@@ -297,7 +344,7 @@ func _emit_deferred(sig: Signal) -> void:
 	sig.emit()
 
 
-## Всплывающий текст (лут, урон, опыт).
+## Всплывающий текст (урон, опыт, события).
 func _spawn_popup(text: String, pos: Vector2, color: Color, size: int) -> void:
 	if not is_inside_tree():
 		return

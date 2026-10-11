@@ -55,13 +55,18 @@ static func roll_rarity(rng: RandomNumberGenerator, from_chest: bool) -> int:
 
 
 ## Генерация случайного предмета. rarity = -1 — бросить жребий.
-static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, from_chest: bool = false) -> Item:
+## exclude_names — шаблоны с такими именами не выпадут (для сундука «3 на выбор»).
+static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, from_chest: bool = false, exclude_names: Array = []) -> Item:
 	if rng == null:
 		rng = RandomNumberGenerator.new()
 		rng.randomize()
 	if rarity < 0:
 		rarity = roll_rarity(rng, from_chest)
-	var t: Dictionary = TEMPLATES[rng.randi_range(0, TEMPLATES.size() - 1)]
+	var candidates := []
+	for t in TEMPLATES:
+		if not exclude_names.has(t["name"]):
+			candidates.append(t)
+	var t: Dictionary = candidates[rng.randi_range(0, candidates.size() - 1)]
 	var mult: float = RARITY_MULT[rarity]
 	var it := Item.new()
 	it.id = _next_id

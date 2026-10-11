@@ -6,6 +6,7 @@ extends Node2D
 
 signal died(actor)
 signal damaged(actor, amount)
+signal attacked(attacker, target)
 
 var display_name := ""
 var team := "enemy"  # "hero" или "enemy"
@@ -59,6 +60,7 @@ func _attack() -> void:
 		return
 	var dmg := maxi(1, int(stats.get("atk", 1)) - int(target.stats.get("def", 0)))
 	target.take_damage(dmg)
+	attacked.emit(self, target)
 
 
 func take_damage(dmg: int) -> void:
