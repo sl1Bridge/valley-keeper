@@ -43,8 +43,8 @@ func step(delta: float) -> void:
 	if _flash > 0.0:
 		_flash -= delta
 		queue_redraw()
-	# Регенерация здоровья
-	if alive and regen > 0.0 and hp < max_hp:
+	# Регенерация здоровья (только пока идёт бой: прекращается, когда боец вышел из боя)
+	if alive and engaged and regen > 0.0 and hp < max_hp:
 		hp = minf(max_hp, hp + regen * delta)
 		queue_redraw()
 	if not alive or not engaged or target == null or not target.alive:
