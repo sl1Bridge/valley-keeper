@@ -13,6 +13,7 @@ func _initialize() -> void:
 	print("=== Логические тесты ===")
 	_test_items()
 	_test_hero()
+	_test_rings_and_regen()
 	_test_enemies()
 	_test_battle_sim()
 	_test_boss_sims()
@@ -114,6 +115,69 @@ func _test_hero() -> void:
 	_check(int(h.get_stats()["atk"]) == 10, "бонус меча учитывается (7+3)")
 	h.unequip("weapon")
 	_check(h.equipment["weapon"] == null and h.inventory.size() == 1, "предмет снят обратно в рюкзак")
+
+
+func _make_ring(p_name: String) -> Item:
+	var r := Item.new()
+	r.name = p_name
+	r.slot = "ring"
+	r.rarity = 0
+	r.bonuses = {"hp": 5}
+	return r
+
+
+func _test_rings_and_regen() -> void:
+	print("-- Кольца, регенерация, передышка --")
+	var h := Hero.new()
+
+	# Два кольца надеваются одновременно, третье вытесняет первое
+	var r1 := _make_ring("Кольцо 1")
+	var r2 := _make_ring("Кольцо 2")
+	var r3 := _make_ring("Кольцо 3")
+	h.inventory.append(r1)
+	h.equip(r1)
+	_check(h.equipment["ring1"] == r1, "первое кольцо — в слот I")
+	h.inventory.append(r2)
+	h.equip(r2)
+	_check(h.equipment["ring2"] == r2, "второе кольцо — в слот II")
+	h.inventory.append(r3)
+	var replaced := h.equip(r3)
+	_check(h.equipment["ring1"] == r3 and h.equipment["ring2"] == r2, "третье кольцо вытеснило первое")
+	_check(replaced == r1 and h.inventory.has(r1), "вытесненное кольцо вернулось в рюкзак")
+
+	# Регенерация: вложение очков и бонус предмета
+	h.add_xp(10)
+	h.allocate("regen")
+	var regen_ring := Item.new()
+	regen_ring.name = "Кольцо регенерации"
+	regen_ring.slot = "ring"
+	regen_ring.rarity = 0
+	regen_ring.bonuses = {"regen": 0.5}
+	h.inventory.append(regen_ring)
+	h.equip(regen_ring)
+	var expected := Hero.PER_POINT["regen"] + 0.5
+	_check(absf(h.get_stats()["regen"] - expected) < 0.001, "регенерация = очко + кольцо (%.2f)" % expected)
+
+	# Регенерация работает в бою
+	var a := Actor.new()
+	a.setup("тест", {"hp": 20, "atk": 1, "def": 0, "spd": 1.0}, Color.WHITE, "rect", 10.0, "hero")
+	a.hp = 10.0
+	a.regen = 2.0
+	a.step(1.0)
+	_check(absf(a.hp - 12.0) < 0.01, "регенерация в бою: 10 + 2/с × 1с = 12")
+	a.step(10.0)
+	_check(a.hp == 20.0, "регенерация не превышает максимум")
+	a.free()
+
+	# Передышка: фиксированное восстановление, не полное
+	h.current_hp = 10.0
+	h.apply_rest()
+	_check(absf(h.current_hp - (10.0 + Hero.REST_HEAL)) < 0.01, "передышка: +%d HP" % int(Hero.REST_HEAL))
+	h.current_hp = h.max_hp() - 5.0
+	h.apply_rest()
+	_check(h.current_hp == h.max_hp(), "передышка не превышает максимум")
+	h.full_restore()
+	_check(h.start_hp() == h.max_hp(), "после смерти герой полностью восстановлен")
 
 
 func _test_enemies() -> void:

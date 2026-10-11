@@ -4,21 +4,26 @@ extends RefCounted
 ## Данные героя: характеристики, уровень, опыт, экипировка, рюкзак.
 ## Никакой визуальной логики — только числа и правила.
 
-const STAT_ORDER := ["hp", "atk", "def", "spd"]
+const STAT_ORDER := ["hp", "atk", "def", "spd", "regen"]
 
 # Базовые характеристики героя 1 уровня
-const BASE := {"hp": 30, "atk": 5, "def": 1, "spd": 1.0}
-# Прирост за 1 очко характеристики
-const PER_POINT := {"hp": 8, "atk": 2, "def": 1, "spd": 0.15}
+const BASE := {"hp": 30, "atk": 5, "def": 1, "spd": 1.0, "regen": 0.0}
+# Прирост за 1 очко характеристики (регенерация — HP в секунду)
+const PER_POINT := {"hp": 8, "atk": 2, "def": 1, "spd": 0.15, "regen": 0.4}
 # Очков характеристик за уровень
 const POINTS_PER_LEVEL := 2
+# Фиксированное восстановление здоровья за передышку между волнами
+const REST_HEAL := 25.0
 
 var level := 1
 var xp := 0
 var stat_points := 0
-var allocated := {"hp": 0, "atk": 0, "def": 0, "spd": 0}
-var equipment := {"weapon": null, "armor": null, "amulet": null}
+var allocated := {"hp": 0, "atk": 0, "def": 0, "spd": 0, "regen": 0}
+# Два слота под кольца: ring1 и ring2
+var equipment := {"weapon": null, "armor": null, "amulet": null, "ring1": null, "ring2": null}
 var inventory := []  # массив Item
+# Текущее здоровье между волнами; < 0 — полное
+var current_hp := -1.0
 
 
 ## Итоговые характеристики: база + вложенные очки + бонусы предметов.
@@ -62,10 +67,44 @@ func allocate(stat: String) -> bool:
 	return true
 
 
-## Надеть предмет из рюкзака. Возвращает предмет, который был в слоте (или null).
+## Максимальное здоровье по текущим характеристикам.
+func max_hp() -> float:
+	return get_stats()["hp"]
+
+
+## Здоровье, с которым герой входит в бой.
+func start_hp() -> float:
+	if current_hp < 0.0 or current_hp > max_hp():
+		current_hp = max_hp()
+	return current_hp
+
+
+## Передышка между волнами: фиксированное восстановление (не полное).
+func apply_rest() -> void:
+	if current_hp < 0.0:
+		current_hp = max_hp()
+	else:
+		current_hp = minf(max_hp(), current_hp + REST_HEAL)
+
+
+## Полное восстановление (после смерти или победы над боссом).
+func full_restore() -> void:
+	current_hp = -1.0
+
+
+## Надеть предмет из рюкзака. Кольца занимают ring1/ring2: сперва свободный
+## слот, если оба заняты — заменяет ring1. Возвращает снятый предмет (или null).
 func equip(item: Item) -> Item:
-	var old: Item = equipment[item.slot]
-	equipment[item.slot] = item
+	var slot: String = item.slot
+	if slot == "ring":
+		if equipment["ring1"] == null:
+			slot = "ring1"
+		elif equipment["ring2"] == null:
+			slot = "ring2"
+		else:
+			slot = "ring1"
+	var old: Item = equipment[slot]
+	equipment[slot] = item
 	inventory.erase(item)
 	if old != null:
 		inventory.append(old)

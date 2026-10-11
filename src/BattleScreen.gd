@@ -112,13 +112,24 @@ func _build_hud() -> void:
 
 func _spawn_hero() -> void:
 	_hero_actor = Actor.new()
-	_hero_actor.setup("Герой", hero.get_stats(), Color(0.25, 0.45, 0.9), "rect", 30.0, "hero")
+	var stats := hero.get_stats()
+	_hero_actor.setup("Герой", stats, Color(0.25, 0.45, 0.9), "rect", 30.0, "hero")
+	# Герой входит в бой с тем здоровьем, что осталось после прошлой волны + передышка
+	_hero_actor.hp = clampf(hero.start_hp(), 1.0, _hero_actor.max_hp)
+	_hero_actor.regen = float(stats.get("regen", 0.0))
 	_hero_actor.position = HERO_POS
 	_hero_actor.engaged = true
 	_hero_actor.died.connect(_on_hero_died)
 	_hero_actor.damaged.connect(_on_actor_damaged)
 	_hero_actor.attacked.connect(_on_actor_attacked)
 	_world.add_child(_hero_actor)
+
+
+## Остаток здоровья героя (Main забирает после боя).
+func hero_hp() -> float:
+	if is_instance_valid(_hero_actor):
+		return _hero_actor.hp
+	return 0.0
 
 
 func _spawn_enemies() -> void:

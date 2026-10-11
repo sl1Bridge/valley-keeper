@@ -11,8 +11,9 @@ signal attacked(attacker, target)
 var display_name := ""
 var team := "enemy"  # "hero" или "enemy"
 var stats := {}      # hp, atk, def, spd
-var max_hp := 1
-var hp := 1
+var max_hp := 1.0
+var hp := 1.0
+var regen := 0.0     # HP в секунду, работает прямо в бою
 var body_color := Color.WHITE
 var shape := "rect"  # "rect" | "circle" | "triangle"
 var radius := 30.0
@@ -32,7 +33,7 @@ func setup(p_name: String, p_stats: Dictionary, p_color: Color, p_shape: String,
 	shape = p_shape
 	radius = p_radius
 	team = p_team
-	max_hp = maxi(1, int(stats.get("hp", 1)))
+	max_hp = float(maxi(1, int(stats.get("hp", 1))))
 	hp = max_hp
 	move_speed = float(stats.get("move", 80.0))
 
@@ -41,6 +42,10 @@ func setup(p_name: String, p_stats: Dictionary, p_color: Color, p_shape: String,
 func step(delta: float) -> void:
 	if _flash > 0.0:
 		_flash -= delta
+		queue_redraw()
+	# Регенерация здоровья
+	if alive and regen > 0.0 and hp < max_hp:
+		hp = minf(max_hp, hp + regen * delta)
 		queue_redraw()
 	if not alive or not engaged or target == null or not target.alive:
 		return

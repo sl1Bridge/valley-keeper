@@ -49,20 +49,26 @@ func _on_embark() -> void:
 
 
 func _on_wave_cleared() -> void:
+	# Сохраняем остаток здоровья и добавляем фиксированную передышку
+	if _screen is BattleScreen:
+		hero.current_hp = (_screen as BattleScreen).hero_hp()
+	hero.apply_rest()
 	wave += 1
-	show_gear("Волна пройдена! Герой отдохнул, раны затянулись. Проверь рюкзак.")
+	show_gear("Волна пройдена! Передышка: +%d HP. Проверь рюкзак и очки характеристик." % int(Hero.REST_HEAL))
 
 
 func _on_hero_died() -> void:
+	hero.full_restore()
 	_show_end_screen(
 		"Поражение",
-		"Герой пал в бою, но весь собранный лут и опыт сохранены.\nВложи очки характеристик, обнови снарягу — и вперёд, снова!",
+		"Герой пал в бою, но весь собранный лут и опыт сохранены.\nВ лагере он полностью пришёл в себя.\nВложи очки характеристик, обнови снарягу — и вперёд, снова!",
 		"Вернуться в лагерь",
 		func(): show_gear("Не беда! Попробуй другую сборку — волна та же.")
 	)
 
 
 func _on_boss_defeated() -> void:
+	hero.full_restore()
 	wins += 1
 	wave = 1
 	_show_end_screen(

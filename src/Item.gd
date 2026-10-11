@@ -10,9 +10,9 @@ const RARITY_COLORS := [
 	Color(0.35, 0.6, 1.0),    # редкий — синий
 	Color(0.8, 0.4, 1.0),     # эпический — фиолетовый
 ]
-const SLOT_NAMES := {"weapon": "Оружие", "armor": "Броня", "amulet": "Амулет"}
-const STAT_NAMES := {"hp": "Здоровье", "atk": "Сила атаки", "def": "Защита", "spd": "Скорость атаки"}
-const STAT_ORDER := ["hp", "atk", "def", "spd"]
+const SLOT_NAMES := {"weapon": "Оружие", "armor": "Броня", "amulet": "Амулет", "ring": "Кольцо"}
+const STAT_NAMES := {"hp": "Здоровье", "atk": "Сила атаки", "def": "Защита", "spd": "Скорость атаки", "regen": "Регенерация"}
+const STAT_ORDER := ["hp", "atk", "def", "spd", "regen"]
 
 # Множитель силы бонусов по редкости
 const RARITY_MULT := [1.0, 1.6, 2.4]
@@ -26,10 +26,13 @@ const TEMPLATES := [
 	{"name": "Кожаная куртка", "slot": "armor", "bonuses": {"def": 1, "hp": 4}},
 	{"name": "Кольчуга", "slot": "armor", "bonuses": {"def": 2}},
 	{"name": "Плащ тени", "slot": "armor", "bonuses": {"def": 1, "spd": 0.1}},
-	{"name": "Каменный оберег", "slot": "amulet", "bonuses": {"hp": 8}},
+	{"name": "Каменный оберег", "slot": "amulet", "bonuses": {"hp": 5, "regen": 0.3}},
 	{"name": "Оберег волка", "slot": "amulet", "bonuses": {"atk": 1, "spd": 0.1}},
 	{"name": "Солнечный медальон", "slot": "amulet", "bonuses": {"hp": 5, "def": 1}},
 	{"name": "Перо ветра", "slot": "amulet", "bonuses": {"spd": 0.2}},
+	{"name": "Кольцо жизни", "slot": "ring", "bonuses": {"hp": 6, "regen": 0.3}},
+	{"name": "Кольцо клинка", "slot": "ring", "bonuses": {"atk": 2}},
+	{"name": "Кольцо прилива", "slot": "ring", "bonuses": {"regen": 0.4}},
 ]
 
 static var _next_id := 1
@@ -77,7 +80,7 @@ static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, from_c
 	it.bonuses = {}
 	for k in t["bonuses"]:
 		var v: float = t["bonuses"][k] * mult
-		if k == "spd":
+		if k == "spd" or k == "regen":
 			v = snappedf(v, 0.05)
 			if is_zero_approx(v):
 				v = 0.05 * signf(t["bonuses"][k])
@@ -99,12 +102,12 @@ func slot_name() -> String:
 	return SLOT_NAMES.get(slot, slot)
 
 
-## Текст вида "Сила атаки +3, Здоровье +4"
+## Текст вида "Сила атаки +3, Регенерация +0.30"
 func bonuses_text() -> String:
 	var parts := []
 	for k in STAT_ORDER:
 		if bonuses.has(k):
 			var v: float = bonuses[k]
-			var txt := ("+%.2f" % v) if k == "spd" else ("%+d" % int(v))
+			var txt := ("%+.2f" % v) if k == "spd" or k == "regen" else ("%+d" % int(v))
 			parts.append("%s %s" % [STAT_NAMES[k], txt])
 	return ", ".join(parts)

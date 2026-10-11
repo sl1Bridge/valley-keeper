@@ -12,7 +12,8 @@ var wave := 1
 var wins := 0
 var message := ""
 
-const SLOT_ORDER := ["weapon", "armor", "amulet"]
+const SLOT_ORDER := ["weapon", "armor", "amulet", "ring1", "ring2"]
+const SLOT_DISPLAY := {"weapon": "Оружие", "armor": "Броня", "amulet": "Амулет", "ring1": "Кольцо I", "ring2": "Кольцо II"}
 
 
 func _ready() -> void:
@@ -20,10 +21,12 @@ func _ready() -> void:
 
 
 ## Полностью перестроить интерфейс (после любого изменения данных).
+## ВАЖНО: удаляем через queue_free, а не free — иначе игра падает,
+## когда rebuild вызван кликом по кнопке, которую мы удаляем.
 func rebuild() -> void:
 	for c in get_children():
 		remove_child(c)
-		c.free()
+		c.queue_free()
 	_build()
 
 
@@ -125,6 +128,12 @@ func _build_hero_panel(columns: HBoxContainer) -> void:
 	xp_lbl.modulate = Color(1, 1, 1, 0.7)
 	box.add_child(xp_lbl)
 
+	var hp_lbl := Label.new()
+	hp_lbl.text = "Здоровье: %d / %d" % [int(hero.start_hp()), int(hero.max_hp())]
+	hp_lbl.add_theme_font_size_override("font_size", 18)
+	hp_lbl.modulate = Color(0.95, 0.55, 0.5)
+	box.add_child(hp_lbl)
+
 	var points := Label.new()
 	points.text = "Свободные очки: %d" % hero.stat_points
 	points.add_theme_font_size_override("font_size", 18)
@@ -142,7 +151,7 @@ func _build_hero_panel(columns: HBoxContainer) -> void:
 		row.add_child(name_lbl)
 
 		var val := Label.new()
-		val.text = "%.2f" % stats[key] if key == "spd" else str(int(stats[key]))
+		val.text = "%.2f" % stats[key] if key == "spd" or key == "regen" else str(int(stats[key]))
 		val.add_theme_font_size_override("font_size", 18)
 		val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(val)
@@ -177,11 +186,11 @@ func _build_equipment_panel(columns: HBoxContainer) -> void:
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.custom_minimum_size = Vector2(0, 64)
 		if it != null:
-			btn.text = "%s\n%s — %s" % [Item.SLOT_NAMES[slot], it.name, it.bonuses_text()]
+			btn.text = "%s\n%s — %s" % [SLOT_DISPLAY[slot], it.name, it.bonuses_text()]
 			btn.add_theme_color_override("font_color", it.rarity_color())
 			btn.tooltip_text = "Нажми, чтобы снять в рюкзак"
 		else:
-			btn.text = "%s\n— пусто —" % Item.SLOT_NAMES[slot]
+			btn.text = "%s\n— пусто —" % SLOT_DISPLAY[slot]
 			btn.modulate = Color(1, 1, 1, 0.5)
 		btn.pressed.connect(_on_slot_pressed.bind(slot))
 		box.add_child(btn)
