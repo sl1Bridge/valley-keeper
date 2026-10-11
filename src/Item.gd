@@ -2,20 +2,31 @@ class_name Item
 extends RefCounted
 
 ## Предмет экипировки. Всё данные, без визуала.
-## Редкость: 0 — обычный, 1 — редкий, 2 — эпический.
+## Редкость: 0 — Обычный, 1 — Необычный, 2 — Редкий, 3 — Мистический,
+## 4 — Легендарный, 5 — Артефакт.
 
-const RARITY_NAMES := ["Обычный", "Редкий", "Эпический"]
+const RARITY_NAMES := ["Обычный", "Необычный", "Редкий", "Мистический", "Легендарный", "Артефакт"]
 const RARITY_COLORS := [
 	Color(0.78, 0.78, 0.78),  # обычный — серый
+	Color(0.35, 0.85, 0.4),   # необычный — зелёный
 	Color(0.35, 0.6, 1.0),    # редкий — синий
-	Color(0.8, 0.4, 1.0),     # эпический — фиолетовый
+	Color(0.8, 0.4, 1.0),     # мистический — фиолетовый
+	Color(0.95, 0.8, 0.3),    # легендарный — золотой
+	Color(0.9, 0.3, 0.25),    # артефакт — красный
 ]
 const SLOT_NAMES := {"weapon": "Оружие", "armor": "Броня", "amulet": "Амулет", "ring": "Кольцо"}
 const STAT_NAMES := {"hp": "Здоровье", "atk": "Сила атаки", "def": "Защита", "spd": "Скорость атаки", "regen": "Регенерация"}
 const STAT_ORDER := ["hp", "atk", "def", "spd", "regen"]
 
-# Множитель силы бонусов по редкости
-const RARITY_MULT := [1.0, 1.6, 2.4]
+# Множитель силы бонусов по редкости (временные значения, уточнить по игротестам)
+const RARITY_MULT := [1.0, 1.3, 1.6, 2.0, 2.5, 3.2]
+
+# Базовые веса редкостей на 1-й волне (временные значения)
+const RARITY_BASE_WEIGHTS := [70.0, 20.0, 7.0, 2.2, 0.7, 0.1]
+# Сдвиг весов к старшим редкостям за каждую волну после первой
+const RARITY_WAVE_SHIFT := 0.09
+# Дополнительный сдвиг для финального сундука волны
+const RARITY_RICH_SHIFT := 0.8
 
 # Шаблоны предметов (~11 штук по ТЗ): имя, слот, базовые бонусы (для обычной редкости)
 const TEMPLATES := [
@@ -44,32 +55,40 @@ var rarity: int
 var bonuses: Dictionary
 
 
-## Бросок редкости. Из сундука шансы лучше, из финального сундука волны (rich) — ещё лучше.
-static func roll_rarity(rng: RandomNumberGenerator, from_chest: bool, rich: bool = false) -> int:
-	var r := rng.randf()
-	if rich:
-		if r < 0.2:
-			return 0
-		return 1 if r < 0.65 else 2
-	if from_chest:
-		if r < 0.5:
-			return 0
-		return 1 if r < 0.85 else 2
-	else:
-		if r < 0.7:
-			return 0
-		return 1 if r < 0.95 else 2
+## Веса редкостей для волны. Чем выше волна, тем больше вес старших редкостей;
+## финальный сундук волны (rich) даёт дополнительный сдвиг.
+static func rarity_weights(wave: int, rich: bool = false) -> Array:
+	var shift: float = (wave - 1) * RARITY_WAVE_SHIFT + (RARITY_RICH_SHIFT if rich else 0.0)
+	var w := []
+	for t in RARITY_BASE_WEIGHTS.size():
+		w.append(RARITY_BASE_WEIGHTS[t] * pow(1.0 + shift, t))
+	return w
 
 
-## Генерация случайного предмета. rarity = -1 — бросить жребий.
+## Бросок редкости по весам волны.
+static func roll_rarity(rng: RandomNumberGenerator, wave: int = 1, rich: bool = false) -> int:
+	var w := rarity_weights(wave, rich)
+	var total := 0.0
+	for x in w:
+		total += x
+	var r := rng.randf() * total
+	var acc := 0.0
+	for t in w.size():
+		acc += w[t]
+		if r <= acc:
+			return t
+	return w.size() - 1
+
+
+## Генерация случайного предмета. rarity = -1 — бросить жребий по весам волны.
 ## exclude_names — шаблоны с такими именами не выпадут (для сундука «3 на выбор»).
 ## rich — финальный сундук волны: шансы редкости выше.
-static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, from_chest: bool = false, exclude_names: Array = [], rich: bool = false) -> Item:
+static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, wave: int = 1, exclude_names: Array = [], rich: bool = false) -> Item:
 	if rng == null:
 		rng = RandomNumberGenerator.new()
 		rng.randomize()
 	if rarity < 0:
-		rarity = roll_rarity(rng, from_chest, rich)
+		rarity = roll_rarity(rng, wave, rich)
 	var candidates := []
 	for t in TEMPLATES:
 		if not exclude_names.has(t["name"]):

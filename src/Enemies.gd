@@ -4,7 +4,7 @@ extends RefCounted
 ## Описания врагов, состав волн и масштабирование сложности.
 ## Всё статическое — состояния тут нет.
 
-const TOTAL_WAVES := 10  # 10-я волна — босс
+const TOTAL_WAVES := 20  # 20-я волна — босс
 
 const TYPES := {
 	"slime": {
@@ -40,7 +40,7 @@ static func type_weights(wave: int) -> Dictionary:
 	}
 
 
-## Состав волны: массив ключей типов, не больше MAX_ENEMIES. 10-я волна — только босс.
+## Состав волны: массив ключей типов, не больше MAX_ENEMIES. Последняя волна — только босс.
 static func wave_composition(wave: int, rng: RandomNumberGenerator = null) -> Array:
 	if wave >= TOTAL_WAVES:
 		return ["boss"]

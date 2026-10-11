@@ -76,7 +76,7 @@ func _test_items() -> void:
 	var ok := true
 	for i in 40:
 		var it := Item.generate(rng)
-		if not Item.SLOT_NAMES.has(it.slot) or it.rarity < 0 or it.rarity > 2 or it.bonuses.is_empty():
+		if not Item.SLOT_NAMES.has(it.slot) or it.rarity < 0 or it.rarity >= Item.RARITY_NAMES.size() or it.bonuses.is_empty():
 			ok = false
 		if it.bonuses_text().is_empty():
 			ok = false
@@ -84,13 +84,32 @@ func _test_items() -> void:
 
 	var chest_ok := true
 	for i in 20:
-		var it := Item.generate(rng, -1, true)
-		if it.rarity < 0 or it.rarity > 2:
+		var it := Item.generate(rng, -1, 5)
+		if it.rarity < 0 or it.rarity >= Item.RARITY_NAMES.size():
 			chest_ok = false
-	_check(chest_ok, "генерация из сундука работает")
+	_check(chest_ok, "генерация с броском редкости по волне работает")
 
-	var epic := Item.generate(rng, 2)
-	_check(epic.rarity == 2 and epic.rarity_name() == "Эпический", "принудительная эпическая редкость")
+	var artifact := Item.generate(rng, 5)
+	_check(artifact.rarity == 5 and artifact.rarity_name() == "Артефакт", "принудительная редкость «Артефакт»")
+	_check(Item.RARITY_NAMES.size() == 6 and Item.RARITY_MULT.size() == 6, "6 редкостей с множителями")
+
+	# Чем выше волна, тем выше средняя редкость дропа
+	var avg := func(wave: int) -> float:
+		var r := RandomNumberGenerator.new()
+		r.seed = 100 + wave
+		var sum := 0.0
+		for i in 300:
+			sum += Item.roll_rarity(r, wave)
+		return sum / 300.0
+	_check(avg.call(15) > avg.call(1), "редкость дропа растёт с номером волны")
+	var rich_avg := func(wave: int) -> float:
+		var r := RandomNumberGenerator.new()
+		r.seed = 200 + wave
+		var sum := 0.0
+		for i in 300:
+			sum += Item.roll_rarity(r, wave, true)
+		return sum / 300.0
+	_check(rich_avg.call(1) > avg.call(1), "финальный сундук ценнее обычного на той же волне")
 
 
 func _test_hero() -> void:
@@ -191,7 +210,8 @@ func _test_enemies() -> void:
 	print("-- Враги и волны --")
 	var comp1 := Enemies.wave_composition(1)
 	_check(comp1.size() == 3 and comp1.all(func(t): return t == "slime"), "волна 1 — три слизня")
-	_check(Enemies.wave_composition(10) == ["boss"], "волна 10 — босс")
+	_check(Enemies.wave_composition(Enemies.TOTAL_WAVES) == ["boss"], "волна %d — босс" % Enemies.TOTAL_WAVES)
+	_check(Enemies.TOTAL_WAVES == 20, "в локации 20 волн")
 
 	# Ни в одной волне не больше MAX_ENEMIES врагов
 	var capped := true
@@ -351,20 +371,20 @@ func _test_boss_sims() -> void:
 			strong.allocate("atk")
 	for slot in ["weapon", "armor", "amulet"]:
 		var it := Item.new()
-		it.name = "Эпик"
+		it.name = "Легенда"
 		it.slot = slot
-		it.rarity = 2
+		it.rarity = 4
 		it.bonuses = {"atk": 8, "hp": 20, "def": 4}
 		strong.inventory.append(it)
 		strong.equip(it)
-	var b1 := _run_battle(strong, 10, 0)
+	var b1 := _run_battle(strong, Enemies.TOTAL_WAVES, 0)
 	_check(b1._state == "done", "бой с боссом завершился")
 	_check(b1._hero_actor.alive, "прокачанный герой победил босса")
 	b1.free()
 
 	# Голый герой 1 уровня должен проиграть (и игра это корректно обрабатывает)
 	var weak := Hero.new()
-	var b2 := _run_battle(weak, 10, 0)
+	var b2 := _run_battle(weak, Enemies.TOTAL_WAVES, 0)
 	_check(b2._state == "done", "бой слабого героя завершился")
 	_check(not b2._hero_actor.alive, "слабый герой пал — путь поражения работает")
 	b2.free()

@@ -313,7 +313,7 @@ func _on_chest_clicked(chest: Chest) -> void:
 	var pos: Vector2 = chest.position
 	_chests.erase(chest)
 	chest.queue_free()
-	var item := Item.generate(_rng, -1, true)
+	var item := Item.generate(_rng, -1, wave)
 	hero.inventory.append(item)
 	_spawn_popup("Найдено: %s (%s)" % [item.name, item.rarity_name()], pos + Vector2(-70, -70), item.rarity_color(), 18)
 	_update_hud()
@@ -325,7 +325,7 @@ func _open_final_chest() -> void:
 	_current_choices = []
 	var taken := []
 	for i in Enemies.CHEST_CHOICES:
-		var item := Item.generate(_rng, -1, true, taken, true)
+		var item := Item.generate(_rng, -1, wave, taken, true)
 		taken.append(item.name)
 		_current_choices.append(item)
 	_show_chest_ui()
