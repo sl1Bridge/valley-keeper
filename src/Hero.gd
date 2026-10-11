@@ -17,6 +17,10 @@ const REST_HEAL := 25.0
 # Доля максимального здоровья, восстанавливаемая при повышении уровня в бою
 # (временное значение, уточнить по игротестам)
 const LEVEL_UP_HEAL := 0.3
+# Вместимость рюкзака (ячеек)
+const INVENTORY_SIZE := 30
+# Опыт за продажу предмета по редкости (временные значения)
+const SELL_XP := [2, 4, 7, 12, 20, 35]
 
 var level := 1
 var xp := 0
@@ -93,6 +97,35 @@ func apply_rest() -> void:
 ## Полное восстановление (после смерти или победы над боссом).
 func full_restore() -> void:
 	current_hp = -1.0
+
+
+## Добавить предмет в рюкзак с учётом вместимости.
+## Если рюкзак полон — теряется один случайный предмет самой низкой
+## из имеющихся редкостей. Возвращает потерянный предмет (или null).
+func add_item(item: Item) -> Item:
+	var lost: Item = null
+	if inventory.size() >= INVENTORY_SIZE:
+		var min_rarity := 999
+		for it in inventory:
+			min_rarity = mini(min_rarity, it.rarity)
+		var candidates := []
+		for it in inventory:
+			if it.rarity == min_rarity:
+				candidates.append(it)
+		lost = candidates[randi() % candidates.size()]
+		inventory.erase(lost)
+	inventory.append(item)
+	return lost
+
+
+## Продать предмет из рюкзака за опыт. Возвращает полученный опыт (0 — предмета нет).
+func sell_item(item: Item) -> int:
+	if not inventory.has(item):
+		return 0
+	inventory.erase(item)
+	var xp: int = SELL_XP[item.rarity]
+	add_xp(xp)
+	return xp
 
 
 ## Надеть предмет из рюкзака. Кольца занимают ring1/ring2: сперва свободный

@@ -34,6 +34,9 @@ var hero: Hero
 var wave := 1
 var wins := 0
 
+## Выбранная скорость боя запоминается между боями (сессия игры).
+static var persisted_speed := 1.0
+
 var _rng := RandomNumberGenerator.new()
 var _state := "fight"  # "fight" | "loot" | "done"
 var _kills := 0
@@ -68,6 +71,7 @@ func _ready() -> void:
 	add_child(_world)
 	_spawn_hero()
 	_spawn_enemies()
+	set_speed(persisted_speed)  # скорость из прошлого боя
 	_update_hud()
 
 
@@ -264,8 +268,10 @@ func _on_speed_pressed() -> void:
 
 
 ## Скорость боя: x1 или x2 (масштабирует время движка, включая твины и таймеры).
+## Выбор сохраняется в persisted_speed и действует в следующих боях.
 func set_speed(mult: float) -> void:
 	_speed = mult
+	persisted_speed = mult
 	Engine.time_scale = mult
 	if is_instance_valid(_speed_btn):
 		_speed_btn.text = "Скорость: x%d" % int(mult)
@@ -314,10 +320,18 @@ func _on_chest_clicked(chest: Chest) -> void:
 	_chests.erase(chest)
 	chest.queue_free()
 	var item := Item.generate(_rng, -1, wave)
-	hero.inventory.append(item)
-	_spawn_popup("Найдено: %s (%s)" % [item.name, item.rarity_name()], pos + Vector2(-70, -70), item.rarity_color(), 18)
+	_grant_item(item, pos)
 	_update_hud()
 	_check_loot_done()
+
+
+## Предмет — в рюкзак с учётом вместимости; если места не хватило,
+## показываем, какой предмет потерян.
+func _grant_item(item: Item, pos: Vector2) -> void:
+	var lost := hero.add_item(item)
+	_spawn_popup("Найдено: %s (%s)" % [item.name, item.rarity_name()], pos + Vector2(-70, -70), item.rarity_color(), 18)
+	if lost != null:
+		_spawn_popup("Рюкзак полон: потерян %s" % lost.name, pos + Vector2(-70, -100), Color(0.75, 0.75, 0.75), 16)
 
 
 ## Финальный сундук: 3 предмета на выбор, без повторов, редкость выше обычной.
@@ -370,7 +384,7 @@ func _show_chest_ui() -> void:
 
 ## Выбор предмета в финальном сундуке.
 func _on_chest_choice(item: Item) -> void:
-	hero.inventory.append(item)
+	_grant_item(item, FINAL_CHEST_POS)
 	_current_choices = []
 	if _chest_ui != null:
 		_chest_ui.queue_free()

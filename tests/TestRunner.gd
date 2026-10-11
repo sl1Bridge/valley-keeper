@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_items()
 	_test_hero()
 	_test_rings_and_regen()
+	_test_inventory()
 	_test_enemies()
 	_test_chests_heal_speed()
 	_test_battle_sim()
@@ -206,6 +207,41 @@ func _test_rings_and_regen() -> void:
 	_check(h.start_hp() == h.max_hp(), "после смерти герой полностью восстановлен")
 
 
+func _test_inventory() -> void:
+	print("-- Инвентарь: лимит 30, вытеснение, продажа --")
+	var h := Hero.new()
+	_check(Hero.INVENTORY_SIZE == 30, "вместимость рюкзака — 30 ячеек")
+
+	var mk := func(rarity: int) -> Item:
+		var it := Item.new()
+		it.name = "Предмет р%d" % rarity
+		it.slot = "weapon"
+		it.rarity = rarity
+		it.bonuses = {"atk": 1}
+		return it
+
+	for i in 28:
+		h.add_item(mk.call(0))
+	var rare: Item = mk.call(3)
+	h.add_item(rare)
+	h.add_item(mk.call(0))
+	_check(h.inventory.size() == Hero.INVENTORY_SIZE, "рюкзак заполнен до 30")
+
+	var extra: Item = mk.call(1)
+	var lost := h.add_item(extra)
+	_check(h.inventory.size() == Hero.INVENTORY_SIZE, "при переполнении рюкзак остаётся 30")
+	_check(lost != null and lost.rarity == 0, "потерян случайный предмет самой низкой редкости")
+	_check(h.inventory.has(extra) and h.inventory.has(rare), "новый и редкий предметы на месте")
+
+	# Продажа за опыт: +12 опыта (мистический) — сразу новый уровень
+	var xp_gained := h.sell_item(rare)
+	_check(xp_gained == Hero.SELL_XP[3], "цена продажи по редкости (+%d опыта)" % Hero.SELL_XP[3])
+	_check(not h.inventory.has(rare), "проданный предмет ушёл из рюкзака")
+	_check(h.level == 2 and h.xp == 2, "опыт за продажу дал уровень (10 порог, остаток 2)")
+	_check(h.stat_points == Hero.POINTS_PER_LEVEL, "очки характеристик за уровень начислены")
+	_check(h.sell_item(rare) == 0, "нельзя продать предмет, которого нет в рюкзаке")
+
+
 func _test_enemies() -> void:
 	print("-- Враги и волны --")
 	var comp1 := Enemies.wave_composition(1)
@@ -286,6 +322,17 @@ func _test_chests_heal_speed() -> void:
 	_check(Engine.time_scale == 2.0, "ускорение боя x2")
 	b.set_speed(1.0)
 	_check(Engine.time_scale == 1.0, "возврат к скорости x1")
+
+	# Выбранная скорость сохраняется в следующем бою
+	b.set_speed(2.0)
+	var b2 := BattleScreen.new()
+	b2.hero = Hero.new()
+	b2.wave = 1
+	b2.wins = 0
+	b2._ready()
+	_check(Engine.time_scale == 2.0, "скорость боя сохраняется в новом бою")
+	b2.set_speed(1.0)
+	b2.free()
 
 	b.free()
 
