@@ -528,26 +528,55 @@ func _test_enemies() -> void:
 	print("-- Враги и волны --")
 	var comp1 := Enemies.wave_composition(1)
 	_check(comp1.size() == 2 and comp1.all(func(t): return t == "slime"), "волна 1 — два слизня")
-	_check(Enemies.wave_composition(2).size() == 3, "волна 2 — три врага (размер растёт каждые две волны)")
 	_check(Enemies.wave_composition(Enemies.TOTAL_WAVES) == ["boss"], "волна %d — босс" % Enemies.TOTAL_WAVES)
 	_check(Enemies.TOTAL_WAVES == 20, "в локации 20 волн")
 
-	# Ни в одной волне не больше MAX_ENEMIES врагов
-	var capped := true
+	# Бюджетная система: сумма цен закрывает бюджет (с округлением вверх),
+	# не больше MAX_ENEMIES врагов, типы — не раньше своей волны допуска
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
+	var budget_ok := true
+	var capped := true
+	var unlock_ok := true
 	for w in range(1, Enemies.TOTAL_WAVES):
-		if Enemies.wave_composition(w, rng).size() > Enemies.MAX_ENEMIES:
-			capped = false
-	_check(capped, "в волне не больше %d врагов" % Enemies.MAX_ENEMIES)
-	var comp9 := Enemies.wave_composition(9, rng)
-	_check(comp9.size() == Enemies.MAX_ENEMIES, "волна 9 — ровно %d врагов" % Enemies.MAX_ENEMIES)
+		var max_v := 1
+		for t in Enemies.VALUES:
+			if w >= Enemies.MIN_WAVE[t]:
+				max_v = maxi(max_v, Enemies.VALUES[t])
+		for i in 30:
+			var comp := Enemies.wave_composition(w, rng)
+			var sum := 0
+			for t in comp:
+				sum += Enemies.VALUES[t]
+				if w < Enemies.MIN_WAVE[t]:
+					unlock_ok = false
+			var budget := Enemies.wave_value(w)
+			if sum < budget or sum >= budget + max_v:
+				budget_ok = false
+			if comp.size() > Enemies.MAX_ENEMIES or comp.is_empty():
+				capped = false
+	_check(budget_ok, "сумма цен врагов закрывает бюджет волны (с округлением вверх)")
+	_check(capped, "в волне от 1 до %d врагов" % Enemies.MAX_ENEMIES)
+	_check(unlock_ok, "волк не раньше %d-й волны, голем — не раньше %d-й" % [Enemies.MIN_WAVE["wolf"], Enemies.MIN_WAVE["golem"]])
+	_check(Enemies.wave_composition(2).all(func(t): return t == "slime"), "волна 2 — только слизни")
 
-	# Сильные враги встречаются чаще на поздних волнах
-	var w1: Dictionary = Enemies.type_weights(1)
-	var w9: Dictionary = Enemies.type_weights(9)
-	_check(w1["wolf"] == 0.0 and w1["golem"] == 0.0, "на 1 волне только слизни")
-	_check(w9["golem"] > w9["slime"] and w9["wolf"] > w1["wolf"], "сильные враги чаще к 9 волне")
+	# Поздние волны разнообразны: волк и голем встречаются, составы не повторяются
+	rng.seed = 11
+	var saw_wolf := false
+	var saw_golem := false
+	var seen := {}
+	for i in 50:
+		var comp: Array = Enemies.wave_composition(19, rng)
+		if comp.has("wolf"):
+			saw_wolf = true
+		if comp.has("golem"):
+			saw_golem = true
+		var key := ""
+		for t in comp:
+			key += t + ","
+		seen[key] = true
+	_check(saw_wolf and saw_golem, "на 19-й волне встречаются и волки, и големы")
+	_check(seen.size() >= 3, "состав 19-й волны разнообразен (%d вариантов за 50 бросков)" % seen.size())
 
 	var base: Dictionary = Enemies.TYPES["slime"]
 	var scaled := Enemies.scaled("slime", 5)

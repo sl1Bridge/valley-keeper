@@ -29,39 +29,60 @@ const TYPES := {
 ## Максимум врагов в одной волне (босс — всегда один).
 const MAX_ENEMIES := 5
 
+## Цена каждого типа в бюджете волны (временные значения, уточнить по игротестам).
+const VALUES := {"slime": 1, "wolf": 2, "golem": 4}
 
-## Веса типов в волне: чем дальше, тем чаще встречаются сильные враги.
-## Слизень постепенно сходит на нет, волк и голем набирают вес.
-static func type_weights(wave: int) -> Dictionary:
-	return {
-		"slime": maxf(1.0, 7.0 - wave),
-		"wolf": clampf(float(wave - 1), 0.0, 4.0),
-		"golem": clampf(float(wave - 3), 0.0, 4.0),
-	}
+## С какой волны тип допускается в волну: допуск, а не гарантия появления.
+const MIN_WAVE := {"slime": 1, "wolf": 3, "golem": 9}
 
 
-## Состав волны: массив ключей типов, не больше MAX_ENEMIES. Последняя волна — только босс.
+## Бюджет волны: стартует с 2 и растёт примерно на 0.8 за волну (временное значение).
+static func wave_value(wave: int) -> int:
+	return roundi(2.0 + (wave - 1) * 0.8)
+
+
+## Состав волны: случайная комбинация врагов на сумму бюджета волны
+## (если ровно не набирается — округление вверх), не больше MAX_ENEMIES.
+## Последняя волна — только босс.
 static func wave_composition(wave: int, rng: RandomNumberGenerator = null) -> Array:
 	if wave >= TOTAL_WAVES:
 		return ["boss"]
 	if rng == null:
 		rng = RandomNumberGenerator.new()
 		rng.randomize()
-	var weights := type_weights(wave)
-	var total := 0.0
-	for k in weights:
-		total += weights[k]
-	var list := []
-	# Размер волны растёт медленно: +1 враг каждые две волны (волна 1 — 2 врага)
-	var n: int = mini(2 + wave / 2, MAX_ENEMIES)
-	for i in n:
-		var r := rng.randf() * total
-		var acc := 0.0
-		for k in weights:
-			acc += weights[k]
-			if r <= acc:
-				list.append(k)
-				break
+	var budget := wave_value(wave)
+	# Типы, допущенные на этой волне, и самая высокая цена среди них
+	var eligible: Array = []
+	var max_value := 1
+	for t in VALUES:
+		if wave >= MIN_WAVE[t]:
+			eligible.append(t)
+			max_value = maxi(max_value, VALUES[t])
+	var list: Array = []
+	var spent := 0
+	while spent < budget and list.size() < MAX_ENEMIES:
+		var remaining: int = budget - spent
+		var slots_left: int = MAX_ENEMIES - list.size()
+		var options: Array = []
+		if slots_left == 1:
+			# Последний слот: добираем до бюджета, при необходимости округляя вверх.
+			for t in eligible:
+				if VALUES[t] >= remaining:
+					options.append(t)
+			if options.is_empty():
+				# Даже самый дорогой тип не дотягивает — берём его, так ближе всего.
+				for t in eligible:
+					if VALUES[t] == max_value:
+						options.append(t)
+		else:
+			# Обычный слот: случайный тип, который влезает в остаток бюджета
+			# и не делает его недостижимым для оставшихся слотов.
+			for t in eligible:
+				if VALUES[t] <= remaining and remaining - VALUES[t] <= (slots_left - 1) * max_value:
+					options.append(t)
+		var pick: String = options[rng.randi() % options.size()]
+		list.append(pick)
+		spent += VALUES[pick]
 	return list
 
 
