@@ -208,8 +208,13 @@ func _test_hero() -> void:
 	print("-- Герой: характеристики, опыт, экипировка --")
 	var h := Hero.new()
 	var s := h.get_stats()
-	_check(int(s["atk"]) == 5 and int(s["surv"]) == int(Hero.BASE["surv"]), "базовые характеристики (сила, выживаемость)")
-	_check(not s.has("hp") and not s.has("regen"), "здоровье и регенерация — не характеристики, а производные Выживаемости")
+	_check(int(s["atk"]) == 5 and int(s["surv"]) == int(Hero.BASE["surv"]), "базовые характеристики (сила, выносливость)")
+	var base5 := true
+	for k in Hero.STAT_ORDER:
+		if int(s[k]) != 5:
+			base5 = false
+	_check(base5, "все базовые характеристики равны 5")
+	_check(not s.has("hp") and not s.has("regen"), "здоровье и регенерация — не характеристики, а производные Выносливости")
 	_check(h.max_hp() > 25.0 and h.max_hp() < 35.0, "стартовое здоровье около 30 (%d)" % int(h.max_hp()))
 	_check(not h.allocate("atk"), "нельзя вложить очко без очков")
 
@@ -278,6 +283,8 @@ func _test_class_slots() -> void:
 	var r := Hero.new("rogue")
 	_check(r.equip_slots().has("weapon1") and r.equip_slots().has("weapon2"), "у Вора два слота под оружие")
 	_check(not r.equip_slots().has("shield") and not r.equip_slots().has("weapon"), "у Вора нет щита и единого слота оружия")
+	_check(k.equip_slots().has("helmet") and k.equip_slots().has("boots"), "у Рыцаря есть слоты шлема и сапог")
+	_check(r.equip_slots().has("helmet") and r.equip_slots().has("boots"), "у Вора есть слоты шлема и сапог")
 
 	# Вор носит два оружия; бросок на конкретный слот заменяет именно его
 	var mk := func(p_name: String) -> Item:
@@ -306,6 +313,8 @@ func _test_class_slots() -> void:
 	_check(not Hero.slot_accepts("weapon1", "shield"), "щит не встаёт в слот оружия")
 	_check(Hero.slot_accepts("weapon2", "weapon"), "оружие встаёт в Оружие II")
 	_check(not Hero.slot_accepts("armor", "weapon"), "оружие не встаёт в броню")
+	_check(Hero.slot_accepts("helmet", "helmet") and Hero.slot_accepts("boots", "boots"), "шлем и сапоги встают в свои слоты")
+	_check(not Hero.slot_accepts("helmet", "boots") and not Hero.slot_accepts("boots", "helmet"), "шлем и сапоги не взаимозаменяемы")
 
 	# Классовые предметы: щиты выпадают только Рыцарю
 	var rng := RandomNumberGenerator.new()
@@ -346,39 +355,67 @@ func _test_class_slots() -> void:
 	_check(knight_saw_block, "Рыцарю выпадают предметы на блок")
 	_check(not knight_saw_dodge, "Рыцарю не выпадают предметы на уворот")
 
+	# Классовые шлемы/сапоги: свои — выпадают, чужие — никогда
+	rng.seed = 123
+	var knight_saw_rogue_gear := false
+	var saw_helmet := false
+	var saw_boots := false
+	for i in 400:
+		var it3 := Item.generate(rng, -1, 8, [], false, "knight")
+		if it3.name == "Капюшон тени" or it3.name == "Сапоги акробата":
+			knight_saw_rogue_gear = true
+		if it3.slot == "helmet":
+			saw_helmet = true
+		if it3.slot == "boots":
+			saw_boots = true
+	_check(not knight_saw_rogue_gear, "Рыцарю не выпадают шлем и сапоги Вора (400 генераций)")
+	_check(saw_helmet and saw_boots, "шлемы и сапоги реально выпадают")
+
 
 func _test_diminishing() -> void:
-	print("-- Формулы затухания: защита %, ловкость, выживаемость, уворот/блок --")
-	# Отображаемые названия: Сила, Ловкость, Выживаемость
-	_check(Item.STAT_NAMES["atk"] == "Сила", "атака переименована в Силу")
-	_check(Item.STAT_NAMES["spd"] == "Ловкость", "скорость атаки переименована в Ловкость")
-	_check(Item.STAT_NAMES["surv"] == "Выживаемость", "здоровье и регенерация скрыты за Выживаемостью")
+	print("-- Формулы затухания: защита %, ловкость, выносливость, уворот/блок --")
+	# Отображаемые названия: Сила, Ловкость, Выносливость
+	_check(Item.STAT_NAMES["atk"] == "Сила", "атака отображается как Сила")
+	_check(Item.STAT_NAMES["spd"] == "Ловкость", "скорость атаки отображается как Ловкость")
+	_check(Item.STAT_NAMES["surv"] == "Выносливость", "Выживаемость переименована в Выносливость")
 
+	# S-образная кривая cap × raw² / (raw² + K²): слабая на низких, мягкий предел на высоких
 	var e0 := Hero.effective({"def": 0, "spd": 0, "surv": 0})
 	_check(absf(e0["def_pct"]) < 0.001, "без защиты снижение урона 0%")
+	var e5 := Hero.effective({"def": 5, "spd": 0, "surv": 0})
+	_check(e5["def_pct"] > 0.05 and e5["def_pct"] < 0.08, "защита 5 → ~6%% (равноценно старой базе)")
 	var e15 := Hero.effective({"def": 15, "spd": 0, "surv": 0})
-	_check(absf(e15["def_pct"] - 0.5) < 0.001, "защита 15 → снижение 50%")
+	_check(e15["def_pct"] > 0.35 and e15["def_pct"] < 0.42, "защита 15 → ~38%%")
 	var e30 := Hero.effective({"def": 30, "spd": 0, "surv": 0})
-	_check(e30["def_pct"] > e15["def_pct"] and e30["def_pct"] < 0.7, "защита 30 → меньше 70%")
-	var inc1: float = e15["def_pct"] - e0["def_pct"]
-	var inc2: float = e30["def_pct"] - e15["def_pct"]
-	_check(inc2 < inc1, "прирост защиты затухает: вторые +15 дают меньше первых")
+	_check(e30["def_pct"] > 0.70 and e30["def_pct"] < 0.73, "защита 30 → ~71%%")
+	var inc1: float = e15["def_pct"] - e5["def_pct"]
+	var e45 := Hero.effective({"def": 45, "spd": 0, "surv": 0})
+	var inc2: float = e45["def_pct"] - e30["def_pct"]
+	_check(inc2 < inc1, "прирост защиты затухает на высоких значениях (45→30 слабее 5→15)")
+	_check(e5["def_pct"] < e15["def_pct"] / 3.0, "на низких значениях эффект занижен (S-кривая)")
 
 	_check(absf(e0["aps"] - 1.0) < 0.001, "без очков ловкости — базовый темп 1.00 уд/с")
+	var s5 := Hero.effective({"spd": 5, "def": 0, "surv": 0})
+	_check(s5["aps"] > 1.05 and s5["aps"] < 1.15, "ловкость 5 → ~1.10 уд/с (равноценно старой базе)")
 	var s10 := Hero.effective({"spd": 10, "def": 0, "surv": 0})
-	_check(absf(s10["aps"] - 2.0) < 0.001, "ловкость 10 → 2.00 уд/с")
+	_check(s10["aps"] > 1.30 and s10["aps"] < 1.38, "ловкость 10 → ~1.34 уд/с")
 	_check(s10["aps"] < 1.0 + Hero.SPD_CAP, "темп ниже максимума формулы")
+	var s_neg := Hero.effective({"spd": -2, "def": 0, "surv": 0})
+	_check(s_neg["aps"] < 1.0 and s_neg["aps"] >= 0.9, "штраф ловкости снижает темп (знак сохраняется)")
 
-	# Выживаемость: здоровье и регенерация с затуханием
-	_check(absf(e0["max_hp"]) < 0.001 and absf(e0["regen_hp"]) < 0.001, "без выживаемости нет ни здоровья, ни регенерации")
-	var v30 := Hero.effective({"surv": 30, "def": 0, "spd": 0})
-	_check(absf(v30["max_hp"] - 70.0) < 0.001, "выживаемость 30 → 70 HP")
-	var v80 := Hero.effective({"surv": 80, "def": 0, "spd": 0})
-	_check(absf(v80["regen_hp"] - 4.0) < 0.001, "выживаемость 80 → регенерация 4 HP/с")
+	# Выносливость: здоровье и регенерация с затуханием
+	_check(absf(e0["max_hp"]) < 0.001 and absf(e0["regen_hp"]) < 0.001, "без выносливости нет ни здоровья, ни регенерации")
+	var v5 := Hero.effective({"surv": 5, "def": 0, "spd": 0})
+	_check(absf(v5["max_hp"] - 28.0) < 0.5, "выносливость 5 → 28 HP (равноценно старой базе)")
+	_check(v5["regen_hp"] > 0.6 and v5["regen_hp"] < 0.8, "выносливость 5 → ~0.7 HP/с")
 	var v15 := Hero.effective({"surv": 15, "def": 0, "spd": 0})
-	var hp_inc1: float = v15["max_hp"] - e0["max_hp"]
+	var v30 := Hero.effective({"surv": 30, "def": 0, "spd": 0})
+	_check(absf(v30["max_hp"] - 126.0) < 0.5, "выносливость 30 → 126 HP")
+	var v80 := Hero.effective({"surv": 80, "def": 0, "spd": 0})
+	_check(v80["regen_hp"] > 7.5 and v80["regen_hp"] < 8.0, "выносливость 80 → ~7.7 HP/с")
+	var hp_inc1: float = v15["max_hp"] - v5["max_hp"]
 	var hp_inc2: float = v30["max_hp"] - v15["max_hp"]
-	_check(hp_inc2 < hp_inc1, "прирост здоровья от выживаемости затухает")
+	_check(hp_inc2 < hp_inc1, "прирост здоровья от выносливости затухает")
 
 	var d15 := Hero.effective({"dodge": 15})
 	_check(absf(d15["class_pct"] - 0.3) < 0.001, "уворот 15 → шанс 30%")
@@ -404,7 +441,7 @@ func _test_diminishing() -> void:
 	var rr := Hero.new("rogue")
 	rr.stat_points = 3
 	_check(not rr.allocate("dodge"), "уворот нельзя качать очками — только предметы")
-	_check(rr.allocate("surv"), "выживаемость качается очками (базовая характеристика)")
+	_check(rr.allocate("surv"), "выносливость качается очками (базовая характеристика)")
 	var kk := Hero.new("knight")
 	kk.stat_points = 3
 	_check(not kk.allocate("block"), "блок нельзя качать очками — только предметы")
@@ -446,7 +483,7 @@ func _test_rings_and_regen() -> void:
 	_check(h.equipment["ring2"] == r4 and h.equipment["ring1"] == r3, "бросок на Кольцо II заменил именно его")
 	_check(old2 == r2 and h.inventory.has(r2), "снятое с Кольца II вернулось в рюкзак")
 
-	# Выживаемость: вложение очков и бонус предмета складываются (чистый герой)
+	# Выносливость: вложение очков и бонус предмета складываются (чистый герой)
 	var h2 := Hero.new()
 	var surv_base: float = h2.get_stats()["surv"]
 	h2.add_xp(10)
@@ -459,7 +496,7 @@ func _test_rings_and_regen() -> void:
 	h2.inventory.append(surv_ring)
 	h2.equip(surv_ring)
 	var expected: float = surv_base + Hero.PER_POINT["surv"] + 3.0
-	_check(absf(h2.get_stats()["surv"] - expected) < 0.001, "выживаемость = база + очко + кольцо (%.0f очков)" % expected)
+	_check(absf(h2.get_stats()["surv"] - expected) < 0.001, "выносливость = база + очко + кольцо (%.0f очков)" % expected)
 
 	# Регенерация работает в бою
 	var a := Actor.new()

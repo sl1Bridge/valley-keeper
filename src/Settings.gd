@@ -61,6 +61,10 @@ class SettingsWindow:
 
 	func _ready() -> void:
 		set_anchors_preset(Control.PRESET_FULL_RECT)
+		# Родитель — CanvasLayer, а не Control: якоря сами не сработают,
+		# поэтому размер окна задаём явно по размеру вьюпорта (и следим за ним)
+		_sync_size()
+		get_viewport().size_changed.connect(_sync_size)
 
 		var dim := ColorRect.new()
 		dim.color = Color(0, 0, 0, 0.6)
@@ -145,6 +149,10 @@ class SettingsWindow:
 	func _on_close() -> void:
 		closed.emit()
 		queue_free()
+
+
+	func _sync_size() -> void:
+		size = get_viewport_rect().size
 
 
 ## Кнопка-шестерёнка в верхнем левом углу игры, рисуется кодом.

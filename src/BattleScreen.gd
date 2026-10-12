@@ -136,7 +136,7 @@ func _spawn_hero() -> void:
 
 
 ## Боевые характеристики героя: сырые очки превращаем в реальные значения
-## (здоровье из Выживаемости, атак/с из Ловкости, % защиты, шанс уворота/блока).
+## (здоровье из Выносливости, атак/с из Ловкости, % защиты, шанс уворота/блока).
 func _hero_battle_stats() -> Dictionary:
 	var stats := hero.get_stats()
 	var eff := Hero.effective(stats)
@@ -383,8 +383,12 @@ func _open_final_chest() -> void:
 func _show_chest_ui() -> void:
 	if _chest_ui != null:
 		_chest_ui.queue_free()
-	_chest_ui = PanelContainer.new()
-	_chest_ui.set_anchors_preset(Control.PRESET_CENTER)
+	# Обертка на весь экран: окно сундука центрируется по экрану
+	_chest_ui = CenterContainer.new()
+	_chest_ui.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_chest_ui)
+
+	var panel := PanelContainer.new()
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.13, 0.14, 0.18, 0.97)
 	style.set_corner_radius_all(12)
@@ -394,12 +398,12 @@ func _show_chest_ui() -> void:
 	style.content_margin_right = 28
 	style.content_margin_top = 22
 	style.content_margin_bottom = 22
-	_chest_ui.add_theme_stylebox_override("panel", style)
-	add_child(_chest_ui)
+	panel.add_theme_stylebox_override("panel", style)
+	_chest_ui.add_child(panel)
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 12)
-	_chest_ui.add_child(box)
+	panel.add_child(box)
 
 	var title := Label.new()
 	title.text = "Финальный сундук — выбери предмет"
@@ -407,6 +411,15 @@ func _show_chest_ui() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 20)
+	box.add_child(columns)
+
+	# Слева — три предмета на выбор
+	var choices := VBoxContainer.new()
+	choices.add_theme_constant_override("separation", 12)
+	choices.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	columns.add_child(choices)
 	for item in _current_choices:
 		var btn := Button.new()
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -414,7 +427,56 @@ func _show_chest_ui() -> void:
 		btn.text = "%s (%s)\n%s · %s" % [item.name, item.rarity_name(), item.slot_name(), item.bonuses_text()]
 		btn.add_theme_color_override("font_color", item.rarity_color())
 		btn.pressed.connect(_on_chest_choice.bind(item))
-		box.add_child(btn)
+		choices.add_child(btn)
+
+	columns.add_child(VSeparator.new())
+
+	# Справа — что сейчас на герое и что лежит в рюкзаке: проще сравнить
+	var side := VBoxContainer.new()
+	side.add_theme_constant_override("separation", 4)
+	columns.add_child(side)
+
+	var eq_title := Label.new()
+	eq_title.text = "Сейчас на герое:"
+	eq_title.add_theme_font_size_override("font_size", 16)
+	side.add_child(eq_title)
+	for slot in hero.equip_slots():
+		var it: Item = hero.equipment[slot]
+		var l := Label.new()
+		l.add_theme_font_size_override("font_size", 13)
+		if it != null:
+			l.text = "%s: %s — %s" % [GearScreen.SLOT_DISPLAY[slot], it.name, it.bonuses_text()]
+			l.modulate = it.rarity_color()
+		else:
+			l.text = "%s: — пусто —" % GearScreen.SLOT_DISPLAY[slot]
+			l.modulate = Color(1, 1, 1, 0.35)
+		side.add_child(l)
+
+	var inv_title := Label.new()
+	inv_title.text = "В рюкзаке (%d):" % hero.inventory.size()
+	inv_title.add_theme_font_size_override("font_size", 16)
+	side.add_child(inv_title)
+
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(340, 150)
+	side.add_child(scroll)
+	var inv_list := VBoxContainer.new()
+	inv_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inv_list.add_theme_constant_override("separation", 2)
+	scroll.add_child(inv_list)
+	if hero.inventory.is_empty():
+		var empty := Label.new()
+		empty.text = "— пусто —"
+		empty.add_theme_font_size_override("font_size", 13)
+		empty.modulate = Color(1, 1, 1, 0.35)
+		inv_list.add_child(empty)
+	else:
+		for it in hero.inventory:
+			var l := Label.new()
+			l.add_theme_font_size_override("font_size", 13)
+			l.text = "%s (%s) — %s" % [it.name, it.slot_name(), it.bonuses_text()]
+			l.modulate = it.rarity_color()
+			inv_list.add_child(l)
 
 
 ## Выбор предмета в финальном сундуке.

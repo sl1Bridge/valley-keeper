@@ -14,8 +14,8 @@ const RARITY_COLORS := [
 	Color(0.95, 0.8, 0.3),    # легендарный — золотой
 	Color(0.9, 0.3, 0.25),    # артефакт — красный
 ]
-const SLOT_NAMES := {"weapon": "Оружие", "shield": "Щит", "armor": "Броня", "amulet": "Амулет", "ring": "Кольцо"}
-const STAT_NAMES := {"atk": "Сила", "spd": "Ловкость", "def": "Защита", "surv": "Выживаемость", "dodge": "Шанс уворота", "block": "Шанс блока"}
+const SLOT_NAMES := {"weapon": "Оружие", "shield": "Щит", "armor": "Броня", "amulet": "Амулет", "ring": "Кольцо", "helmet": "Шлем", "boots": "Сапоги"}
+const STAT_NAMES := {"atk": "Сила", "spd": "Ловкость", "def": "Защита", "surv": "Выносливость", "dodge": "Шанс уворота", "block": "Шанс блока"}
 const STAT_ORDER := ["atk", "spd", "def", "surv", "dodge", "block"]
 
 # Множитель силы бонусов по редкости (временные значения, уточнить по игротестам)
@@ -29,7 +29,7 @@ const RARITY_WAVE_SHIFT := 0.03
 const RARITY_RICH_SHIFT := 0.5
 
 # Шаблоны предметов: имя, слот, базовые бонусы (для обычной редкости).
-# Бонусы — сырые очки (ловкость и выживаемость тоже в очках, не в готовых значениях).
+# Бонусы — сырые очки (ловкость и выносливость тоже в очках, не в готовых значениях).
 # Поле "class" — классовый предмет: выпадает только герою этого класса.
 const TEMPLATES := [
 	{"name": "Ржавый меч", "slot": "weapon", "bonuses": {"atk": 3}},
@@ -40,10 +40,18 @@ const TEMPLATES := [
 	{"name": "Щит ополченца", "slot": "shield", "bonuses": {"def": 2, "surv": 2}, "class": "knight"},
 	{"name": "Башенный щит", "slot": "shield", "bonuses": {"def": 3, "spd": -1}, "class": "knight"},
 	{"name": "Щит бастиона", "slot": "shield", "bonuses": {"def": 2, "block": 3}, "class": "knight"},
+	{"name": "Кожаный шлем", "slot": "helmet", "bonuses": {"def": 1, "surv": 1}},
+	{"name": "Железный шлем", "slot": "helmet", "bonuses": {"def": 2}},
+	{"name": "Шлем стражника", "slot": "helmet", "bonuses": {"def": 1, "block": 2}, "class": "knight"},
+	{"name": "Капюшон тени", "slot": "helmet", "bonuses": {"spd": 1, "dodge": 2}, "class": "rogue"},
 	{"name": "Кожаная куртка", "slot": "armor", "bonuses": {"def": 1, "surv": 2}},
 	{"name": "Кольчуга", "slot": "armor", "bonuses": {"def": 2}},
 	{"name": "Плащ тени", "slot": "armor", "bonuses": {"def": 1, "spd": 2}},
 	{"name": "Плащ ускользания", "slot": "armor", "bonuses": {"def": 1, "dodge": 4}, "class": "rogue"},
+	{"name": "Старые сапоги", "slot": "boots", "bonuses": {"spd": 1, "surv": 1}},
+	{"name": "Сапоги следопыта", "slot": "boots", "bonuses": {"spd": 2}},
+	{"name": "Сапоги бастиона", "slot": "boots", "bonuses": {"surv": 2, "block": 2}, "class": "knight"},
+	{"name": "Сапоги акробата", "slot": "boots", "bonuses": {"spd": 1, "dodge": 2}, "class": "rogue"},
 	{"name": "Каменный оберег", "slot": "amulet", "bonuses": {"surv": 3}},
 	{"name": "Оберег волка", "slot": "amulet", "bonuses": {"atk": 1, "spd": 2}},
 	{"name": "Солнечный медальон", "slot": "amulet", "bonuses": {"surv": 2, "def": 1}},

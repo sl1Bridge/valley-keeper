@@ -14,7 +14,7 @@ var hero: Hero
 var wave := 1
 var message := ""
 
-const SLOT_DISPLAY := {"weapon": "Оружие", "weapon1": "Оружие I", "weapon2": "Оружие II", "shield": "Щит", "armor": "Броня", "amulet": "Амулет", "ring1": "Кольцо I", "ring2": "Кольцо II"}
+const SLOT_DISPLAY := {"weapon": "Оружие", "weapon1": "Оружие I", "weapon2": "Оружие II", "shield": "Щит", "helmet": "Шлем", "armor": "Броня", "boots": "Сапоги", "amulet": "Амулет", "ring1": "Кольцо I", "ring2": "Кольцо II"}
 const CELL := 64.0
 const INVENTORY_COLS := 6
 
@@ -155,7 +155,12 @@ func _build_hero_panel(columns: HBoxContainer) -> void:
 		row.add_child(name_lbl)
 
 		var val := Label.new()
-		val.text = str(int(stats[key]))
+		# Классовая характеристика (уворот/блок) показывается точным значением —
+		# реальным шансом в процентах, а не условными очками
+		if key == Hero.CLASS_STAT[hero.kind]:
+			val.text = "%d%%" % roundi(eff["class_pct"] * 100.0)
+		else:
+			val.text = str(int(stats[key]))
 		val.add_theme_font_size_override("font_size", 18)
 		val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(val)
@@ -170,6 +175,15 @@ func _build_hero_panel(columns: HBoxContainer) -> void:
 			plus.pressed.connect(_on_stat_plus.bind(key))
 			row.add_child(plus)
 
+	# Калькулятор урона в секунду: Сила × скорость атаки
+	var dps: float = stats.get("atk", 0.0) * eff["aps"]
+	var dps_lbl := Label.new()
+	dps_lbl.text = "Урон в секунду: %.1f" % dps
+	dps_lbl.add_theme_font_size_override("font_size", 18)
+	dps_lbl.modulate = Color(1.0, 0.85, 0.5)
+	dps_lbl.tooltip_text = "Сила × скорость атаки: %d × %.2f уд/с\nБез учёта защиты и уворота цели" % [int(stats.get("atk", 0)), eff["aps"]]
+	box.add_child(dps_lbl)
+
 
 ## Подсказка при наведении на характеристику: реальное боевое значение
 ## и чем характеристика управляет.
@@ -182,13 +196,13 @@ func _stat_tooltip(key: String, stats: Dictionary, eff: Dictionary) -> String:
 		"def":
 			return "Снижение входящего урона: %d%%" % roundi(eff["def_pct"] * 100.0)
 		"surv":
-			return "Макс. здоровье: %d\nРегенерация: %.1f HP/с\nОт Выживаемости зависят здоровье и регенерация" % [int(eff["max_hp"]), eff["regen_hp"]]
+			return "Макс. здоровье: %d\nРегенерация: %.1f HP/с\nОт Выносливости зависят здоровье и регенерация" % [int(eff["max_hp"]), eff["regen_hp"]]
 		"dodge", "block":
 			return "Реальный шанс: %d%%\nОчками не качается — растёт только от предметов" % roundi(eff["class_pct"] * 100.0)
 	return ""
 
 
-## Панель экипировки: 5 ячеек-слотов с иконками.
+## Панель экипировки: ячейки-слоты с иконками, в две колонки.
 func _build_equipment_panel(columns: HBoxContainer) -> void:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", _panel_style())
@@ -204,11 +218,17 @@ func _build_equipment_panel(columns: HBoxContainer) -> void:
 	header.add_theme_font_size_override("font_size", 22)
 	box.add_child(header)
 
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 18)
+	grid.add_theme_constant_override("v_separation", 10)
+	box.add_child(grid)
+
 	for slot in hero.equip_slots():
 		var it: Item = hero.equipment[slot]
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
-		box.add_child(row)
+		grid.add_child(row)
 
 		var cell := InvCell.new()
 		cell.gear = self
@@ -234,7 +254,7 @@ func _build_equipment_panel(columns: HBoxContainer) -> void:
 		info.add_child(item_lbl)
 
 	var hint := Label.new()
-	hint.text = "Перетащи предмет из рюкзака на ячейку,\nчтобы надеть. Перетащи надетый предмет\nв рюкзак, чтобы снять."
+	hint.text = "Надеть — перетащи на ячейку, снять — в рюкзак."
 	hint.modulate = Color(1, 1, 1, 0.5)
 	hint.add_theme_font_size_override("font_size", 14)
 	box.add_child(hint)
@@ -375,6 +395,18 @@ static func draw_slot_icon(cv: Control, slot: String, c: Vector2, s: float, colo
 				c + Vector2(0, 0.45 * s),
 				c + Vector2(-0.34 * s, 0.05 * s),
 			]), color)
+		"helmet":
+			# Шлем: купол (верхняя полуокружность) и поля
+			var dome := PackedVector2Array()
+			for i in 13:
+				var a := PI + PI * i / 12.0
+				dome.append(c + Vector2(cos(a) * 0.34 * s, sin(a) * 0.34 * s - 0.02 * s))
+			cv.draw_colored_polygon(dome, color)
+			cv.draw_rect(Rect2(c + Vector2(-0.42 * s, -0.04 * s), Vector2(0.84 * s, 0.12 * s)), color)
+		"boots":
+			# Сапог: голенище и ступня
+			cv.draw_rect(Rect2(c + Vector2(-0.2 * s, -0.42 * s), Vector2(0.3 * s, 0.56 * s)), color)
+			cv.draw_rect(Rect2(c + Vector2(-0.2 * s, 0.02 * s), Vector2(0.64 * s, 0.3 * s)), color)
 		"amulet":
 			# Самоцвет на цепочке
 			cv.draw_arc(c + Vector2(0, -0.28 * s), 0.14 * s, 0, TAU, 16, color, 0.06 * s)
