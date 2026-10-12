@@ -78,7 +78,7 @@ func _ready() -> void:
 func _build_hud() -> void:
 	var hud := HBoxContainer.new()
 	hud.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	hud.offset_left = 16
+	hud.offset_left = 64  # слева — кнопка настроек (шестерёнка)
 	hud.offset_top = 10
 	hud.offset_right = -16
 	hud.add_theme_constant_override("separation", 32)
@@ -123,7 +123,8 @@ func _build_hud() -> void:
 func _spawn_hero() -> void:
 	_hero_actor = Actor.new()
 	var stats := hero.get_stats()
-	_hero_actor.setup("Герой", stats, Color(0.25, 0.45, 0.9), "rect", 30.0, "hero")
+	# Имя и внешность — из реестра героев (выбор в главном меню)
+	_hero_actor.setup(hero.hero_name(), stats, hero.body_color(), hero.body_shape(), 30.0, "hero")
 	# Герой входит в бой с тем здоровьем, что осталось после прошлой волны + передышка
 	_hero_actor.hp = clampf(hero.start_hp(), 1.0, _hero_actor.max_hp)
 	_hero_actor.regen = float(stats.get("regen", 0.0))

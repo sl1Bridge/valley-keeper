@@ -1,19 +1,24 @@
 class_name GameMain
 extends Node
 
-## Корневой узел игры: хранит состояние забега и переключает экраны.
-## Экраны: лагерь (GearScreen) → бой (BattleScreen) → победа/поражение → снова лагерь.
+## Корневой узел игры: хранит состояние (герои, забеги, победы) и переключает экраны.
+## Экраны: главное меню (MainMenu) → лагерь (GearScreen) → бой (BattleScreen) →
+## победа/поражение → лагерь или главное меню.
+## Поверх всех экранов — кнопка настроек (шестерёнка в верхнем левом углу).
 
-var hero: Hero
-var wave := 1
+var hero: Hero = null  # выбранный герой (данные текущего забега)
+var heroes := {}       # kind -> Hero: у каждого героя свой прогресс забега
+var selected_kind := ""
 var wins := 0
 
 var _screen: Control = null
+var _settings_layer: CanvasLayer
 
 
 func _ready() -> void:
-	hero = Hero.new()
-	show_gear("Добро пожаловать в долину! Собери героя и жми «В путь».")
+	Settings.ensure_buses()
+	_build_settings_button()
+	show_menu("")
 
 
 func _clear_screen() -> void:
@@ -23,11 +28,41 @@ func _clear_screen() -> void:
 		_screen = null
 
 
+# ---------- Главное меню ----------
+
+func show_menu(msg: String) -> void:
+	_clear_screen()
+	var menu := MainMenu.new()
+	menu.heroes = heroes
+	menu.selected_kind = selected_kind
+	menu.wins = wins
+	menu.message = msg
+	menu.start_pressed.connect(_on_menu_start)
+	add_child(menu)
+	_screen = menu
+
+
+func _on_menu_start(kind: String) -> void:
+	selected_kind = kind
+	var is_new := not heroes.has(kind)
+	if is_new:
+		var h := Hero.new()
+		h.kind = kind
+		heroes[kind] = h
+	hero = heroes[kind]
+	if is_new:
+		show_gear("Добро пожаловать в долину! Собери героя и жми «В путь».")
+	else:
+		show_gear("С возвращением! Проверь снарягу — и в путь.")
+
+
+# ---------- Лагерь и бой ----------
+
 func show_gear(msg: String) -> void:
 	_clear_screen()
 	var gear := GearScreen.new()
 	gear.hero = hero
-	gear.wave = wave
+	gear.wave = hero.wave
 	gear.wins = wins
 	gear.message = msg
 	gear.embark_pressed.connect(_on_embark)
@@ -39,7 +74,7 @@ func _on_embark() -> void:
 	_clear_screen()
 	var battle := BattleScreen.new()
 	battle.hero = hero
-	battle.wave = wave
+	battle.wave = hero.wave
 	battle.wins = wins
 	battle.wave_cleared.connect(_on_wave_cleared)
 	battle.hero_died.connect(_on_hero_died)
@@ -53,7 +88,7 @@ func _on_wave_cleared() -> void:
 	if _screen is BattleScreen:
 		hero.current_hp = (_screen as BattleScreen).hero_hp()
 	hero.apply_rest()
-	wave += 1
+	hero.wave += 1
 	show_gear("Волна пройдена! Передышка: +%d HP. Проверь рюкзак и очки характеристик." % int(Hero.REST_HEAL))
 
 
@@ -70,12 +105,12 @@ func _on_hero_died() -> void:
 func _on_boss_defeated() -> void:
 	hero.full_restore()
 	wins += 1
-	wave = 1
+	hero.wave = 1
 	_show_end_screen(
 		"Победа!",
-		"Каменный страж повержен, долина спасена!\nПобед над боссом: %d.\nНовый заход: враги станут сильнее, а герой сохранит всё, что накопил." % wins,
-		"Новый заход",
-		func(): show_gear("Новый заход! Враги усилились — проверь снарягу.")
+		"Каменный страж повержен, долина спасена!\nПобед над боссом: %d.\nГерой сохранил всё, что накопил; новый заход будет сложнее." % wins,
+		"В главное меню",
+		func(): show_menu("Победа! Враги в новом заходе станут сильнее.")
 	)
 
 
@@ -123,3 +158,21 @@ func _show_end_screen(title: String, text: String, button_text: String, on_press
 
 	add_child(screen)
 	_screen = screen
+
+
+# ---------- Настройки ----------
+
+## Кнопка-шестерёнка: живёт в отдельном слое поверх всех экранов игры.
+func _build_settings_button() -> void:
+	_settings_layer = CanvasLayer.new()
+	_settings_layer.layer = 10
+	add_child(_settings_layer)
+	var btn := Settings.GearButton.new()
+	btn.position = Vector2(12, 10)
+	btn.pressed.connect(_on_settings_pressed)
+	_settings_layer.add_child(btn)
+
+
+func _on_settings_pressed() -> void:
+	var popup := Settings.SettingsWindow.new()
+	_settings_layer.add_child(popup)

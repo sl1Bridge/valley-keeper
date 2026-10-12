@@ -13,6 +13,8 @@ func _initialize() -> void:
 	print("=== Логические тесты ===")
 	_test_items()
 	_test_hero()
+	_test_heroes_roster()
+	_test_settings()
 	_test_rings_and_regen()
 	_test_inventory()
 	_test_enemies()
@@ -37,8 +39,9 @@ func _process(_delta: float) -> bool:
 		_frames += 1
 		if _frames >= 30:
 			var main := root.get_node("Main")
-			_check(main._screen is GearScreen, "стартовый экран — лагерь")
-			main._on_embark()
+			_check(main._screen is MainMenu, "стартовый экран — главное меню")
+			_check(main._screen._start_btn.disabled, "без выбора героя забег начать нельзя")
+			main._on_menu_start("warden")
 			_phase = 3
 			_frames = 0
 		return false
@@ -46,10 +49,50 @@ func _process(_delta: float) -> bool:
 		_frames += 1
 		if _frames >= 30:
 			var main := root.get_node("Main")
+			_check(main._screen is GearScreen, "после выбора героя — лагерь")
+			main._on_embark()
+			_phase = 4
+			_frames = 0
+		return false
+	if _phase == 4:
+		_frames += 1
+		if _frames >= 30:
+			var main := root.get_node("Main")
 			_check(main._screen is BattleScreen, "Main переключился на экран боя")
+			var actor_col: Color = (main._screen as BattleScreen)._hero_actor.body_color
+			_check(actor_col == Hero.ROSTER["warden"]["color"], "на поле боя — внешность выбранного героя")
+			_test_victory_flow(main)
 			return _finish()
 		return false
 	return false
+
+
+## Победа над боссом → главное меню; выбор второго героя → его собственный забег.
+func _test_victory_flow(main) -> void:
+	print("-- Победа → главное меню, второй герой --")
+	main._on_boss_defeated()
+	_check(main.wins == 1, "победа над боссом засчитана")
+	_check(main.hero.wave == 1, "новый заход начинается с 1-й волны")
+	var btn := _find_button(main._screen)
+	_check(btn != null, "на экране победы есть кнопка")
+	if btn != null:
+		btn.pressed.emit()
+	_check(main._screen is MainMenu, "после победы игрок попадает в главное меню")
+	main._on_menu_start("ranger")
+	_check(main.hero.kind == "ranger", "выбран второй герой")
+	_check(main.heroes.size() == 2, "у каждого героя свой сохранённый прогресс")
+	_check(main.hero.wave == 1, "забег второго героя начинается с 1-й волны")
+	_check(main._screen is GearScreen, "после выбора второго героя — лагерь")
+
+
+func _find_button(node: Node) -> Button:
+	if node is Button:
+		return node
+	for c in node.get_children():
+		var found := _find_button(c)
+		if found != null:
+			return found
+	return null
 
 
 func _finish() -> bool:
@@ -136,6 +179,42 @@ func _test_hero() -> void:
 	_check(int(h.get_stats()["atk"]) == 10, "бонус меча учитывается (7+3)")
 	h.unequip("weapon")
 	_check(h.equipment["weapon"] == null and h.inventory.size() == 1, "предмет снят обратно в рюкзак")
+
+
+func _test_heroes_roster() -> void:
+	print("-- Герои: реестр, выбор, прогресс --")
+	_check(Hero.KINDS.size() == 2, "в игре два героя")
+	var distinct := true
+	var seen := {}
+	for kind in Hero.KINDS:
+		var def: Dictionary = Hero.ROSTER[kind]
+		var visual: String = str(def["color"]) + def["shape"]
+		if def["name"] == "" or seen.has(visual):
+			distinct = false
+		seen[visual] = true
+	_check(distinct, "герои различаются именем и внешностью")
+	var h := Hero.new()
+	_check(h.kind == Hero.KINDS[0], "герой по умолчанию — первый из реестра")
+	h.kind = Hero.KINDS[1]
+	_check(h.hero_name() == Hero.ROSTER[Hero.KINDS[1]]["name"], "имя героя соответствует выбранному виду")
+	_check(h.wave == 1, "забег героя начинается с 1-й волны")
+	# Вид героя не влияет на характеристики (отличия пока только визуальные)
+	var h2 := Hero.new()
+	_check(h.get_stats() == h2.get_stats(), "у всех героев одинаковые характеристики")
+
+
+func _test_settings() -> void:
+	print("-- Настройки: громкость музыки и звуков --")
+	_check(absf(Settings.music_volume - 0.5) < 0.001 and absf(Settings.sfx_volume - 0.5) < 0.001, "громкость по умолчанию — 50%%")
+	Settings.set_music_volume(0.8)
+	_check(absf(Settings.music_volume - 0.8) < 0.001, "громкость музыки меняется")
+	Settings.set_sfx_volume(1.5)
+	_check(absf(Settings.sfx_volume - 1.0) < 0.001, "громкость ограничена 100%%")
+	Settings.set_music_volume(0.5)
+	Settings.set_sfx_volume(0.5)
+	Settings.ensure_buses()
+	_check(AudioServer.get_bus_index("Music") != -1, "звуковая шина Music создана")
+	_check(AudioServer.get_bus_index("SFX") != -1, "звуковая шина SFX создана")
 
 
 func _make_ring(p_name: String) -> Item:

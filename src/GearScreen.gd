@@ -82,6 +82,11 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	bar.add_theme_constant_override("separation", 24)
 	root.add_child(bar)
 
+	# Отступ под кнопку настроек (шестерёнка в верхнем левом углу)
+	var gear_gap := Control.new()
+	gear_gap.custom_minimum_size.x = 40
+	bar.add_child(gear_gap)
+
 	var title := Label.new()
 	title.text = "Хранитель Долины — Лагерь"
 	title.add_theme_font_size_override("font_size", 26)
@@ -117,7 +122,7 @@ func _build_hero_panel(columns: HBoxContainer) -> void:
 	panel.add_child(box)
 
 	var header := Label.new()
-	header.text = "Герой — уровень %d" % hero.level
+	header.text = "%s — уровень %d" % [hero.hero_name(), hero.level]
 	header.add_theme_font_size_override("font_size", 22)
 	box.add_child(header)
 

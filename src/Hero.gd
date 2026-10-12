@@ -1,10 +1,19 @@
 class_name Hero
 extends RefCounted
 
-## Данные героя: характеристики, уровень, опыт, экипировка, рюкзак.
+## Данные героя: характеристики, уровень, опыт, экипировка, рюкзак, прогресс забега.
 ## Никакой визуальной логики — только числа и правила.
 
 const STAT_ORDER := ["hp", "atk", "def", "spd", "regen"]
+
+## Реестр героев. Пока герои отличаются только именем и внешностью
+## (цвет и форма на экране) — характеристики у всех одинаковые.
+## Имена и вид временные, уточнить у гейм-директора.
+const KINDS := ["warden", "ranger"]
+const ROSTER := {
+	"warden": {"name": "Страж долины", "color": Color(0.25, 0.45, 0.9), "shape": "rect"},
+	"ranger": {"name": "Лесной следопыт", "color": Color(0.3, 0.7, 0.42), "shape": "circle"},
+}
 
 # Базовые характеристики героя 1 уровня
 const BASE := {"hp": 30, "atk": 5, "def": 1, "spd": 1.0, "regen": 0.0}
@@ -31,6 +40,25 @@ var equipment := {"weapon": null, "armor": null, "amulet": null, "ring1": null, 
 var inventory := []  # массив Item
 # Текущее здоровье между волнами; < 0 — полное
 var current_hp := -1.0
+# Вид героя (ключ ROSTER); задаёт только имя и внешность
+var kind := "warden"
+# Текущая волна забега этого героя (у каждого героя свой прогресс)
+var wave := 1
+
+
+## Имя героя из реестра.
+func hero_name() -> String:
+	return ROSTER[kind]["name"]
+
+
+## Цвет фигуры героя на экране боя и в меню.
+func body_color() -> Color:
+	return ROSTER[kind]["color"]
+
+
+## Форма фигуры героя: "rect" | "circle" | "triangle".
+func body_shape() -> String:
+	return ROSTER[kind]["shape"]
 
 
 ## Итоговые характеристики: база + вложенные очки + бонусы предметов.
