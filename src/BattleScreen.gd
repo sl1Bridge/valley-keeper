@@ -203,9 +203,30 @@ func _spawn_enemies() -> void:
 		e.damaged.connect(_on_actor_damaged)
 		e.attacked.connect(_on_actor_attacked)
 		e.evaded.connect(_on_actor_evaded)
+		# Зона наведения: подсказка с характеристиками врага и его эффектом
+		var hover := Control.new()
+		hover.position = Vector2(-e.radius, -e.radius * 2.0)
+		hover.size = Vector2(e.radius * 2.0, e.radius * 2.0)
+		hover.mouse_filter = Control.MOUSE_FILTER_PASS
+		hover.tooltip_text = _enemy_tooltip(type, stats)
+		e.add_child(hover)
 		_world.add_child(e)
 		_enemies.append(e)
 	_pick_hero_target()
+
+
+## Подсказка при наведении на врага: характеристики и эффект,
+## который он может наложить на героя (если есть).
+func _enemy_tooltip(type: String, stats: Dictionary) -> String:
+	var def_pct := Hero.diminish(float(stats.get("def", 0)), 1.0, Hero.DEF_K)
+	var lines := PackedStringArray()
+	lines.append(str(stats["name"]))
+	lines.append("Здоровье: %d · Атака: %d · Скорость: %.1f уд/с" % [int(stats["hp"]), int(stats["atk"]), float(stats["spd"])])
+	lines.append("Защита: %d (−%d%% урона) · Опыт: %d" % [int(stats.get("def", 0)), roundi(def_pct * 100.0), int(stats.get("xp", 0))])
+	var eff := Enemies.effect_desc(type)
+	if eff != "":
+		lines.append("Может наложить: " + eff)
+	return "\n".join(lines)
 
 
 ## Герой выбирает случайную живую цель.
@@ -274,6 +295,7 @@ func _on_enemy_died(e: Actor) -> void:
 		# Победа над боссом — сразу, открывать оставшиеся сундуки не нужно
 		_state = "done"
 		_hero_actor.engaged = false
+		_hero_actor.clear_effects()  # эффекты живут только в фазе боя
 		_show_center("Босс повержен!")
 		_emit_deferred(boss_defeated)
 
@@ -286,6 +308,7 @@ func _on_hero_died(_a: Actor) -> void:
 	_state = "done"
 	for e in _enemies:
 		e.engaged = false
+	_hero_actor.clear_effects()  # эффекты живут только в фазе боя
 	_show_center("Герой пал…")
 	_emit_deferred(hero_died)
 
@@ -301,11 +324,20 @@ func _on_actor_evaded(a: Actor) -> void:
 
 
 ## «Снаряд»: точка летит от атакующего к цели.
-## Атака слизня может отравить героя (стак со своим таймером).
+## Атаки врагов могут наложить на героя статусный эффект:
+## слизень — отравление, волк — кровотечение, голем и босс — оглушение.
 func _on_actor_attacked(src: Actor, dst: Actor) -> void:
-	if dst.team == "hero" and src.stats.get("type", "") == "slime" and _rng.randf() < Enemies.POISON_CHANCE:
-		dst.add_poison()
-		_spawn_popup("Отравление!", dst.position + Vector2(-44, -dst.radius * 2.0 - 96), Color(0.5, 0.9, 0.4), 18)
+	if dst.team == "hero":
+		var etype: String = src.stats.get("type", "")
+		if etype == "slime" and _rng.randf() < Enemies.POISON_CHANCE:
+			dst.add_poison()
+			_spawn_popup("Отравление!", dst.position + Vector2(-44, -dst.radius * 2.0 - 96), Color(0.5, 0.9, 0.4), 18)
+		elif etype == "wolf" and _rng.randf() < Enemies.BLEED_CHANCE:
+			dst.add_bleed()
+			_spawn_popup("Кровотечение!", dst.position + Vector2(-52, -dst.radius * 2.0 - 96), Color(0.9, 0.35, 0.3), 18)
+		elif Enemies.STUN_CHANCE.has(etype) and _rng.randf() < Enemies.STUN_CHANCE[etype]:
+			dst.add_stun(Enemies.STUN_DURATION[etype])
+			_spawn_popup("Оглушение!", dst.position + Vector2(-44, -dst.radius * 2.0 - 96), Color(1.0, 0.85, 0.3), 18)
 	if not is_inside_tree():
 		return
 	var dot := ColorRect.new()
@@ -357,6 +389,7 @@ func _start_loot_phase() -> void:
 		return
 	_state = "loot"
 	_hero_actor.engaged = false
+	_hero_actor.clear_effects()  # эффекты живут только в фазе боя
 	# Финальный сундук — в центре экрана, награды в нём ценнее
 	_spawn_chest(FINAL_CHEST_POS, true)
 	_hint_label.text = "Победа! Кликай по сундукам, чтобы забрать награды"

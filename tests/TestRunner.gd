@@ -21,6 +21,8 @@ func _initialize() -> void:
 	_test_inventory()
 	_test_enemies()
 	_test_poison()
+	_test_bleed_stun()
+	_test_enemy_tooltip()
 	_test_chests_heal_speed()
 	_test_battle_sim()
 	_test_boss_sims()
@@ -643,12 +645,12 @@ func _test_poison() -> void:
 	_check(b._hero_actor.poison_times.size() == 1, "стак отравления наложен")
 	var atk1: float = b._hero_actor.stats["atk"]
 	_check(atk1 < clean_atk, "сила героя снижена отравлением")
-	_check(b._hero_actor._badge.visible and b._hero_actor._badge.stacks == 1, "значок показывает 1 стак")
+	_check(b._hero_actor._badges["poison"].visible and b._hero_actor._badges["poison"].stacks == 1, "значок показывает 1 стак")
 
 	b._hero_actor.add_poison()
 	_check(float(b._hero_actor.stats["atk"]) < atk1, "второй стак усиливает снижение")
-	_check(b._hero_actor._badge.stacks == 2, "значок показывает 2 стака")
-	_check("%%" in b._hero_actor._badge.tooltip_text or "%" in b._hero_actor._badge.tooltip_text, "в подсказке значка — конкретный процент снижения")
+	_check(b._hero_actor._badges["poison"].stacks == 2, "значок показывает 2 стака")
+	_check("%" in b._hero_actor._badges["poison"].tooltip_text, "в подсказке значка — конкретный процент снижения")
 
 	# У каждого стака свой таймер: первый истекает раньше второго
 	b._hero_actor.poison_times[0] = 0.05
@@ -657,7 +659,105 @@ func _test_poison() -> void:
 	b._hero_actor.step(10.0)
 	_check(b._hero_actor.poison_times.is_empty(), "все стаки истекли")
 	_check(float(b._hero_actor.stats["atk"]) == clean_atk, "после отравления сила восстановилась")
-	_check(not b._hero_actor._badge.visible, "значок скрыт без стаков")
+	_check(not b._hero_actor._badges["poison"].visible, "значок скрыт без стаков")
+	b.free()
+
+
+func _test_bleed_stun() -> void:
+	print("-- Кровотечение, оглушение, сброс эффектов после боя --")
+	# Кровотечение: стаки со своими таймерами, урон в секунду, мимо уворота
+	var a := Actor.new()
+	a.setup("герой", {"hp": 200, "atk": 5, "spd": 1.0}, Color.WHITE, "rect", 10.0, "hero")
+	a.engaged = true
+	a.evasion = 1.0  # кровотечение игнорирует уворот
+	a.add_bleed()
+	a.add_bleed()
+	_check(a.bleed_times.size() == 2, "кровотечение стакается")
+	_check(a._badges["bleed"].visible and a._badges["bleed"].stacks == 2, "значок кровотечения показывает 2 стака")
+	_check("HP/с" in a._badges["bleed"].tooltip_text, "в подсказке кровотечения — урон в секунду")
+	var hp0: float = a.hp
+	a.step(1.0)
+	_check(absf(a.hp - (hp0 - Hero.bleed_dps(2) * 1.0)) < 0.01, "2 стака кровотечения: −%d HP/с мимо уворота" % roundi(Hero.bleed_dps(2)))
+	a.step(10.0)
+	_check(a.bleed_times.is_empty(), "стаки кровотечения истекли")
+	_check(not a._badges["bleed"].visible, "значок кровотечения скрыт без стаков")
+	a.free()
+
+	# Оглушение: герой не атакует, таймер атаки сброшен, не стакается
+	var tgt := Actor.new()
+	tgt.setup("цель", {"hp": 500, "atk": 1, "spd": 1.0}, Color.WHITE, "rect", 10.0, "enemy")
+	var s := Actor.new()
+	s.setup("герой", {"hp": 100, "atk": 5, "spd": 2.0}, Color.WHITE, "rect", 10.0, "hero")
+	s.engaged = true
+	s.target = tgt
+	s._atk_timer = 0.4
+	s.add_stun(0.5)
+	_check(s._atk_timer == 0.0, "стан сбрасывает таймер атаки")
+	_check(s._badges["stun"].visible and "Оглушение" in s._badges["stun"].tooltip_text, "значок оглушения с подсказкой")
+	s.step(0.3)
+	_check(tgt.hp == 500.0, "во время стана герой не атакует")
+	s.step(0.3)  # стан кончился, таймер атаки накопил 0.3 < интервала 0.5
+	_check(tgt.hp == 500.0, "после стана таймер атаки идёт заново")
+	s.step(0.3)  # 0.6 >= 0.5 — атака
+	_check(tgt.hp < 500.0, "после окончания стана герой снова атакует")
+	s.add_stun(0.5)
+	s.step(0.2)
+	s.add_stun(0.5)
+	_check(absf(s.stun_left - 0.5) < 0.001, "повторный стан обновляет таймер, а не складывается")
+	s.free()
+	tgt.free()
+
+	# У голема и босса стан прописан, у босса сильнее; у слизня и волка стана нет
+	_check(Enemies.STUN_CHANCE.has("golem") and Enemies.STUN_CHANCE.has("boss"), "стан накладывают голем и босс")
+	_check(Enemies.STUN_CHANCE["boss"] > Enemies.STUN_CHANCE["golem"], "у босса шанс стана выше")
+	_check(Enemies.STUN_DURATION["boss"] > Enemies.STUN_DURATION["golem"], "у босса стан дольше")
+	_check(not Enemies.STUN_CHANCE.has("slime") and not Enemies.STUN_CHANCE.has("wolf"), "слизень и волк стан не накладывают")
+
+	# Эффекты сбрасываются при завершении фазы боя
+	var h := Hero.new()
+	var b := BattleScreen.new()
+	b.hero = h
+	b.wave = 1
+	b._ready()
+	b._hero_actor.add_poison()
+	b._hero_actor.add_bleed()
+	b._hero_actor.add_stun(0.5)
+	var poisoned_hp: float = b._hero_actor.max_hp
+	b._start_loot_phase()
+	_check(b._state == "loot", "фаза боя завершилась (сундуки)")
+	_check(b._hero_actor.poison_times.is_empty() and b._hero_actor.bleed_times.is_empty(), "отравление и кровотечение сброшены после боя")
+	_check(b._hero_actor.stun_left == 0.0, "стан сброшен после боя")
+	_check(b._hero_actor.max_hp > poisoned_hp, "характеристики восстановились после снятия отравления")
+	_check(not b._hero_actor._badges["poison"].visible and not b._hero_actor._badges["bleed"].visible and not b._hero_actor._badges["stun"].visible, "все значки скрыты после боя")
+	b.free()
+
+
+func _test_enemy_tooltip() -> void:
+	print("-- Подсказка при наведении на врага --")
+	var h := Hero.new()
+	var b := BattleScreen.new()
+	b.hero = h
+	b.wave = 9
+	b._ready()
+
+	var wolf_tip := b._enemy_tooltip("wolf", Enemies.scaled("wolf", 9))
+	_check("Волк" in wolf_tip and "Здоровье" in wolf_tip and "Атака" in wolf_tip and "Защита" in wolf_tip, "подсказка содержит имя и характеристики врага")
+	_check("Кровотечение" in wolf_tip, "подсказка волка упоминает кровотечение")
+	_check("Отравление" in b._enemy_tooltip("slime", Enemies.scaled("slime", 1)), "подсказка слизня упоминает отравление")
+	_check("Оглушение" in b._enemy_tooltip("golem", Enemies.scaled("golem", 9)), "подсказка голема упоминает оглушение")
+	_check("Оглушение" in b._enemy_tooltip("boss", Enemies.scaled("boss", 20)), "подсказка босса упоминает оглушение")
+	_check(Enemies.effect_desc("slime") != "" and Enemies.effect_desc("wolf") != "", "описания эффектов заданы у слизня и волка")
+
+	# У врагов на поле есть зона наведения с заполненной подсказкой
+	var ok := true
+	for e in b._enemies:
+		var found := false
+		for c in e.get_children():
+			if c is Control and c.tooltip_text != "":
+				found = true
+		if not found:
+			ok = false
+	_check(ok, "у каждого врага на поле есть подсказка при наведении")
 	b.free()
 
 

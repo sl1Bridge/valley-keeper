@@ -106,3 +106,24 @@ const CHEST_DROP_CHANCE := 0.15
 const CHEST_CHOICES := 3
 ## Шанс слизня наложить отравление при атаке (временное значение).
 const POISON_CHANCE := 0.15
+## Шанс волка наложить кровотечение при атаке (временное значение).
+const BLEED_CHANCE := 0.15
+## Стан (оглушение): шанс при атаке и длительность по типам.
+## У босса и шанс выше, и стан дольше (временные значения).
+const STUN_CHANCE := {"golem": 0.12, "boss": 0.3}
+const STUN_DURATION := {"golem": 0.5, "boss": 1.2}
+
+
+## Описание эффекта, который тип врага может наложить на героя
+## (для подсказки при наведении на врага). Пустая строка — эффекта нет.
+static func effect_desc(type: String) -> String:
+	match type:
+		"slime":
+			return "Отравление (%d%% при атаке): −%d%% к характеристикам за стак, %d с" % [roundi(POISON_CHANCE * 100.0), roundi(Hero.POISON_PER_STACK), roundi(Hero.POISON_DURATION)]
+		"wolf":
+			return "Кровотечение (%d%% при атаке): −%d HP/с за стак, %d с" % [roundi(BLEED_CHANCE * 100.0), roundi(Hero.BLEED_DPS), roundi(Hero.BLEED_DURATION)]
+		"golem":
+			return "Оглушение (%d%% при атаке): герой не атакует %.1f с" % [roundi(STUN_CHANCE["golem"] * 100.0), STUN_DURATION["golem"]]
+		"boss":
+			return "Оглушение (%d%% при атаке): герой не атакует %.1f с" % [roundi(STUN_CHANCE["boss"] * 100.0), STUN_DURATION["boss"]]
+	return ""
