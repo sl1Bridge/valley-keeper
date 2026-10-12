@@ -29,7 +29,8 @@ const RARITY_WAVE_SHIFT := 0.03
 const RARITY_RICH_SHIFT := 0.5
 
 # Шаблоны предметов: имя, слот, базовые бонусы (для обычной редкости).
-# Бонусы — сырые очки (ловкость и выносливость тоже в очках, не в готовых значениях).
+# Бонусы — сырые очки (ловкость и выносливость тоже в очках, не в готовых
+# значениях); уворот/блок — прямые проценты шанса.
 # Поле "class" — классовый предмет: выпадает только герою этого класса.
 const TEMPLATES := [
 	{"name": "Ржавый меч", "slot": "weapon", "bonuses": {"atk": 3}},
@@ -142,10 +143,14 @@ func slot_name() -> String:
 	return SLOT_NAMES.get(slot, slot)
 
 
-## Текст вида "Сила атаки +3, Регенерация +2" (бонусы — целые сырые очки)
+## Текст вида "Сила +3, Шанс уворота +2%" (бонусы — целые числа;
+## уворот/блок — прямые проценты, остальные — сырые очки)
 func bonuses_text() -> String:
 	var parts := []
 	for k in STAT_ORDER:
 		if bonuses.has(k):
-			parts.append("%s %+d" % [STAT_NAMES[k], int(bonuses[k])])
+			if k == "dodge" or k == "block":
+				parts.append("%s %+d%%" % [STAT_NAMES[k], int(bonuses[k])])
+			else:
+				parts.append("%s %+d" % [STAT_NAMES[k], int(bonuses[k])])
 	return ", ".join(parts)

@@ -11,25 +11,27 @@ extends RefCounted
 const STAT_ORDER := ["atk", "spd", "def", "surv"]
 
 ## Классовая характеристика: есть только у своего класса.
-## Очками за уровень не качается — растёт только от предметов.
+## Очками за уровень не качается. Значение — прямой процент шанса:
+## базовый шанс класса + проценты с предметов (предел — CLASS_CAP).
 const CLASS_STAT := {"knight": "block", "rogue": "dodge"}
 
-## Реестр героев (классы). Рыцарь — защитный: слот под щит и шанс блока.
-## Вор — боевой: два слота под оружие и шанс уворота.
-## Базовые характеристики пока одинаковые. Имена, описания и внешность временные.
+## Реестр героев (классы). Рыцарь — защитный: слот под щит, больше защитных
+## характеристик и базовый шанс блока. Вор — боевой: два слота под оружие,
+## больше атакующих характеристик и базовый шанс уворота.
+## Имена, описания и внешность временные.
 const KINDS := ["knight", "rogue"]
 const ROSTER := {
 	"knight": {
 		"name": "Рыцарь",
 		"color": Color(0.25, 0.45, 0.9),
 		"shape": "rect",
-		"desc": "Надёжный защитник долины. Носит щит и умеет блокировать вражеские атаки.",
+		"desc": "Надёжный защитник долины. Носит щит, крепче и умеет блокировать вражеские атаки.",
 	},
 	"rogue": {
 		"name": "Вор",
 		"color": Color(0.5, 0.32, 0.62),
 		"shape": "triangle",
-		"desc": "Быстрый и смертоносный. Сражается двумя клинками и уклоняется от атак.",
+		"desc": "Быстрый и смертоносный. Бьёт сильнее и чаще, сражается двумя клинками и уклоняется от атак.",
 	},
 }
 
@@ -39,8 +41,14 @@ const CLASS_SLOTS := {
 	"rogue": ["weapon1", "weapon2", "helmet", "armor", "boots", "amulet", "ring1", "ring2"],
 }
 
-# Базовые характеристики героя 1 уровня (сырые очки): все по 5
-const BASE := {"atk": 5, "def": 5, "spd": 5.0, "surv": 5.0}
+# Базовые характеристики героя 1 уровня по классам (сырые очки, временные
+# значения): Рыцарь — защитный уклон, Вор — атакующий
+const BASE := {
+	"knight": {"atk": 4, "def": 7, "spd": 5.0, "surv": 6.0},
+	"rogue": {"atk": 7, "def": 4, "spd": 6.0, "surv": 5.0},
+}
+# Базовый шанс классовой характеристики, в процентах (временное значение)
+const BASE_CLASS_PCT := {"knight": 5.0, "rogue": 5.0}
 # Прирост за 1 очко характеристики
 const PER_POINT := {"atk": 2, "def": 1, "spd": 1.0, "surv": 2.0}
 # Очков характеристик за уровень
@@ -58,8 +66,7 @@ const SURV_HP_CAP := 140.0  # выносливость → макс. здоро�
 const SURV_HP_K := 10.0     # выносливость 5 → ~28 HP, 30 → 126 HP
 const REGEN_CAP := 8.0  # выносливость → регенерация: до 8 HP/с
 const REGEN_K := 16.0   # 5 → ~0.7 HP/с, 30 → ~6.2 HP/с
-const CLASS_CAP := 0.6  # уворот/блок: до 60%
-const CLASS_K := 15.0   # 15 → 30%
+const CLASS_CAP := 0.6  # уворот/блок: жёсткий предел 60% (проценты складываются напрямую)
 # Фиксированное восстановление здоровья за передышку между волнами
 const REST_HEAL := 25.0
 # Доля максимального здоровья, восстанавливаемая при повышении уровня в бою
@@ -123,14 +130,14 @@ func body_shape() -> String:
 	return ROSTER[kind]["shape"]
 
 
-## Итоговые сырые очки: база + вложенные очки + бонусы предметов.
-## Включает классовую характеристику (block/dodge) — она только от предметов.
-## Реальные боевые значения из сырых очков считает effective().
+## Итоговые сырые очки: база класса + вложенные очки + бонусы предметов.
+## Классовая характеристика (block/dodge) — прямые проценты: базовый шанс
+## класса + проценты с предметов. Реальные боевые значения считает effective().
 func get_stats() -> Dictionary:
 	var s := {}
 	for k in STAT_ORDER:
-		s[k] = float(BASE[k]) + float(PER_POINT[k]) * allocated[k]
-	s[CLASS_STAT[kind]] = 0.0
+		s[k] = float(BASE[kind][k]) + float(PER_POINT[k]) * allocated[k]
+	s[CLASS_STAT[kind]] = BASE_CLASS_PCT[kind]
 	for slot in equipment:
 		var it: Item = equipment[slot]
 		if it != null:
@@ -148,7 +155,7 @@ static func diminish(raw: float, cap: float, k: float) -> float:
 ## Реальные боевые значения из сырых очков:
 ## def_pct — доля снижения урона, aps — атак в секунду,
 ## max_hp и regen_hp — здоровье и регенерация из Выносливости,
-## class_pct — шанс уворота/блока.
+## class_pct — шанс уворота/блока (прямая сумма процентов, предел CLASS_CAP).
 static func effective(stats: Dictionary) -> Dictionary:
 	var e := {}
 	e["def_pct"] = diminish(maxf(0.0, stats.get("def", 0.0)), 1.0, DEF_K)
@@ -156,8 +163,8 @@ static func effective(stats: Dictionary) -> Dictionary:
 	var surv_raw: float = maxf(0.0, stats.get("surv", 0.0))
 	e["max_hp"] = diminish(surv_raw, SURV_HP_CAP, SURV_HP_K)
 	e["regen_hp"] = diminish(surv_raw, REGEN_CAP, REGEN_K)
-	var class_raw: float = maxf(0.0, stats.get("dodge", stats.get("block", 0.0)))
-	e["class_pct"] = diminish(class_raw, CLASS_CAP, CLASS_K)
+	var class_pct_raw: float = maxf(0.0, stats.get("dodge", stats.get("block", 0.0)))
+	e["class_pct"] = minf(CLASS_CAP, class_pct_raw / 100.0)
 	return e
 
 

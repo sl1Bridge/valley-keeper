@@ -208,20 +208,15 @@ func _test_hero() -> void:
 	print("-- Герой: характеристики, опыт, экипировка --")
 	var h := Hero.new()
 	var s := h.get_stats()
-	_check(int(s["atk"]) == 5 and int(s["surv"]) == int(Hero.BASE["surv"]), "базовые характеристики (сила, выносливость)")
-	var base5 := true
-	for k in Hero.STAT_ORDER:
-		if int(s[k]) != 5:
-			base5 = false
-	_check(base5, "все базовые характеристики равны 5")
+	_check(int(s["atk"]) == int(Hero.BASE[h.kind]["atk"]) and int(s["surv"]) == int(Hero.BASE[h.kind]["surv"]), "базовые характеристики берутся из базы класса")
 	_check(not s.has("hp") and not s.has("regen"), "здоровье и регенерация — не характеристики, а производные Выносливости")
-	_check(h.max_hp() > 25.0 and h.max_hp() < 35.0, "стартовое здоровье около 30 (%d)" % int(h.max_hp()))
+	_check(h.max_hp() > 35.0 and h.max_hp() < 40.0, "стартовое здоровье Рыцаря около 37 (%d)" % int(h.max_hp()))
 	_check(not h.allocate("atk"), "нельзя вложить очко без очков")
 
 	var levels := h.add_xp(10)
 	_check(levels == 1 and h.level == 2 and h.stat_points == Hero.POINTS_PER_LEVEL, "переход на 2 уровень")
 	_check(h.allocate("atk"), "вложение очка в атаку")
-	_check(int(h.get_stats()["atk"]) == 7, "атака выросла до 7")
+	_check(int(h.get_stats()["atk"]) == int(Hero.BASE["knight"]["atk"]) + Hero.PER_POINT["atk"], "атака выросла на прирост за очко")
 
 	var it := Item.new()
 	it.name = "Тестовый меч"
@@ -231,7 +226,7 @@ func _test_hero() -> void:
 	h.inventory.append(it)
 	h.equip(it)
 	_check(h.equipment["weapon"] == it and h.inventory.is_empty(), "предмет надет из рюкзака")
-	_check(int(h.get_stats()["atk"]) == 10, "бонус меча учитывается (7+3)")
+	_check(int(h.get_stats()["atk"]) == int(Hero.BASE["knight"]["atk"]) + Hero.PER_POINT["atk"] + 3, "бонус меча учитывается (+3)")
 	h.unequip("weapon")
 	_check(h.equipment["weapon"] == null and h.inventory.size() == 1, "предмет снят обратно в рюкзак")
 
@@ -253,13 +248,15 @@ func _test_heroes_roster() -> void:
 	h.kind = Hero.KINDS[1]
 	_check(h.hero_name() == Hero.ROSTER[Hero.KINDS[1]]["name"], "имя героя соответствует выбранному классу")
 	_check(h.wave == 1, "забег героя начинается с 1-й волны")
-	# Базовые характеристики классов пока одинаковые (отличия — слоты и классовая характеристика)
-	var h2 := Hero.new()
-	var same := true
-	for k in Hero.STAT_ORDER:
-		if h.get_stats()[k] != h2.get_stats()[k]:
-			same = false
-	_check(same, "базовые характеристики классов одинаковые")
+	# Базовые характеристики классов различаются: Рыцарь — защитный, Вор — атакующий
+	var kk := Hero.new("knight")
+	var rr := Hero.new("rogue")
+	var ks := kk.get_stats()
+	var rs := rr.get_stats()
+	_check(ks["def"] > rs["def"] and ks["surv"] > rs["surv"], "у Рыцаря больше защита и выносливость")
+	_check(rs["atk"] > ks["atk"] and rs["spd"] > ks["spd"], "у Вора больше сила и ловкость")
+	_check(absf(Hero.effective(ks)["class_pct"] - Hero.BASE_CLASS_PCT["knight"] / 100.0) < 0.001, "у Рыцаря базовый шанс блока %d%%" % int(Hero.BASE_CLASS_PCT["knight"]))
+	_check(absf(Hero.effective(rs)["class_pct"] - Hero.BASE_CLASS_PCT["rogue"] / 100.0) < 0.001, "у Вора базовый шанс уворота %d%%" % int(Hero.BASE_CLASS_PCT["rogue"]))
 
 
 func _test_settings() -> void:
@@ -306,7 +303,7 @@ func _test_class_slots() -> void:
 	var old := r.equip(w3, "weapon2")
 	_check(r.equipment["weapon2"] == w3 and r.equipment["weapon1"] == w1, "бросок на Оружие II заменил именно его")
 	_check(old == w2 and r.inventory.has(w2), "снятый клинок вернулся в рюкзак")
-	_check(int(r.get_stats()["atk"]) == int(Hero.BASE["atk"]) + 2, "бонусы двух оружий складываются")
+	_check(int(r.get_stats()["atk"]) == int(Hero.BASE["rogue"]["atk"]) + 2, "бонусы двух оружий складываются")
 
 	# Совместимость слотов
 	_check(Hero.slot_accepts("shield", "shield"), "щит встаёт в слот щита")
@@ -417,8 +414,11 @@ func _test_diminishing() -> void:
 	var hp_inc2: float = v30["max_hp"] - v15["max_hp"]
 	_check(hp_inc2 < hp_inc1, "прирост здоровья от выносливости затухает")
 
+	# Уворот/блок — прямые проценты (без формулы затухания), предел 60%
 	var d15 := Hero.effective({"dodge": 15})
-	_check(absf(d15["class_pct"] - 0.3) < 0.001, "уворот 15 → шанс 30%")
+	_check(absf(d15["class_pct"] - 0.15) < 0.001, "уворот 15%% → шанс ровно 15%%")
+	var d100 := Hero.effective({"dodge": 100})
+	_check(absf(d100["class_pct"] - Hero.CLASS_CAP) < 0.001, "шанс уворота ограничен пределом %d%%" % roundi(Hero.CLASS_CAP * 100.0))
 
 	# Урон снижается на процент защиты цели
 	var attacker := Actor.new()

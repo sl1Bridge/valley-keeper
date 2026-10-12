@@ -198,7 +198,7 @@ func _stat_tooltip(key: String, stats: Dictionary, eff: Dictionary) -> String:
 		"surv":
 			return "Макс. здоровье: %d\nРегенерация: %.1f HP/с\nОт Выносливости зависят здоровье и регенерация" % [int(eff["max_hp"]), eff["regen_hp"]]
 		"dodge", "block":
-			return "Реальный шанс: %d%%\nОчками не качается — растёт только от предметов" % roundi(eff["class_pct"] * 100.0)
+			return "Складывается из базового шанса класса и процентов с предметов\nПредел: %d%%. Очками не качается" % roundi(Hero.CLASS_CAP * 100.0)
 	return ""
 
 

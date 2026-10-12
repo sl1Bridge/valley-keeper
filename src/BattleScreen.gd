@@ -28,6 +28,7 @@ const FORMATIONS := {
 	3: [Vector2(0, -60), Vector2(-60, 30), Vector2(60, 70)],
 	4: [Vector2(0, -80), Vector2(-70, -10), Vector2(70, 20), Vector2(0, 90)],
 	5: [Vector2(0, -100), Vector2(-80, -30), Vector2(80, -10), Vector2(-40, 70), Vector2(50, 90)],
+	6: [Vector2(-20, -110), Vector2(70, -80), Vector2(-80, -30), Vector2(10, 0), Vector2(90, 30), Vector2(-30, 90)],
 }
 
 ## Входные данные (заполняет Main до добавления на сцену)
