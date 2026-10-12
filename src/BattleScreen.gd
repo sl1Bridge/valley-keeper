@@ -133,18 +133,35 @@ func _spawn_hero() -> void:
 	_hero_actor.damaged.connect(_on_actor_damaged)
 	_hero_actor.attacked.connect(_on_actor_attacked)
 	_hero_actor.evaded.connect(_on_actor_evaded)
+	_hero_actor.poisoned.connect(_on_hero_poisoned)
 	_world.add_child(_hero_actor)
 
 
 ## Боевые характеристики героя: сырые очки превращаем в реальные значения
 ## (здоровье из Выносливости, атак/с из Ловкости, % защиты, шанс уворота/блока).
+## Отравление временно снижает базовые характеристики на процент от стаков.
 func _hero_battle_stats() -> Dictionary:
 	var stats := hero.get_stats()
+	var poison := 0.0
+	if is_instance_valid(_hero_actor):
+		poison = Hero.poison_pct(_hero_actor.poison_times.size())
+	if poison > 0.0:
+		for k in ["atk", "spd", "def", "surv"]:
+			stats[k] = stats.get(k, 0.0) * (1.0 - poison)
 	var eff := Hero.effective(stats)
 	stats["hp"] = eff["max_hp"]
 	stats["spd"] = eff["aps"]
 	_apply_hero_effects(_hero_actor, eff)
 	return stats
+
+
+## Стаки отравления изменились: пересчитать характеристики героя
+## (макс. HP может упасть — текущее здоровье обрезается, но не лечится).
+func _on_hero_poisoned() -> void:
+	_hero_actor.stats = _hero_battle_stats()
+	_hero_actor.max_hp = float(maxi(1, int(_hero_actor.stats["hp"])))
+	_hero_actor.hp = minf(_hero_actor.hp, _hero_actor.max_hp)
+	_hero_actor.queue_redraw()
 
 
 ## Применить к бойцу производные характеристики героя (защита %, реген, уворот/блок).
@@ -284,7 +301,11 @@ func _on_actor_evaded(a: Actor) -> void:
 
 
 ## «Снаряд»: точка летит от атакующего к цели.
+## Атака слизня может отравить героя (стак со своим таймером).
 func _on_actor_attacked(src: Actor, dst: Actor) -> void:
+	if dst.team == "hero" and src.stats.get("type", "") == "slime" and _rng.randf() < Enemies.POISON_CHANCE:
+		dst.add_poison()
+		_spawn_popup("Отравление!", dst.position + Vector2(-44, -dst.radius * 2.0 - 96), Color(0.5, 0.9, 0.4), 18)
 	if not is_inside_tree():
 		return
 	var dot := ColorRect.new()

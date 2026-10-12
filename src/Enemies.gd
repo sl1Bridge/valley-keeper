@@ -104,3 +104,5 @@ const BASE_CHESTS := 1
 const CHEST_DROP_CHANCE := 0.15
 ## Сколько предметов на выбор предлагает сундук.
 const CHEST_CHOICES := 3
+## Шанс слизня наложить отравление при атаке (временное значение).
+const POISON_CHANCE := 0.15

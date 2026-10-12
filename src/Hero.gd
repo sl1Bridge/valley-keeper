@@ -77,6 +77,12 @@ const INVENTORY_SIZE := 30
 # Опыт за продажу предмета по редкости (временные значения)
 const SELL_XP := [2, 4, 7, 12, 20, 35]
 
+# Отравление (статусный эффект): время жизни каждого стака и снижение
+# базовых характеристик. Стаки складываются с затуханием (временные значения)
+const POISON_DURATION := 3.0    # секунд на стак, у каждого стака свой таймер
+const POISON_PER_STACK := 5.0   # первый стак снижает характеристики на 5%
+const POISON_STACK_DECAY := 0.6 # каждый следующий стак добавляет ×0.6 от предыдущего
+
 var level := 1
 var xp := 0
 var stat_points := 0
@@ -171,6 +177,15 @@ static func effective(stats: Dictionary) -> Dictionary:
 ## Характеристики для отображения в лагере: 5 общих + классовая.
 func stat_order() -> Array:
 	return STAT_ORDER + [CLASS_STAT[kind]]
+
+
+## Суммарное снижение базовых характеристик от отравления (доля 0..1).
+## Стаки складываются с затуханием: 1 стак → 5%, 2 → 8%, 3 → 9.8%
+## (каждый следующий добавляет ×POISON_STACK_DECAY от предыдущего).
+static func poison_pct(stacks: int) -> float:
+	if stacks <= 0:
+		return 0.0
+	return POISON_PER_STACK / 100.0 * (1.0 - pow(POISON_STACK_DECAY, stacks)) / (1.0 - POISON_STACK_DECAY)
 
 
 ## Сколько опыта нужно для следующего уровня.

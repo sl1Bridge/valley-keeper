@@ -20,6 +20,7 @@ func _initialize() -> void:
 	_test_rings_and_regen()
 	_test_inventory()
 	_test_enemies()
+	_test_poison()
 	_test_chests_heal_speed()
 	_test_battle_sim()
 	_test_boss_sims()
@@ -621,6 +622,43 @@ func _test_enemies() -> void:
 
 	_check(Enemies.BASE_CHESTS == 1, "1 гарантированный сундук за волну")
 	_check(Enemies.CHEST_DROP_CHANCE > 0.0 and Enemies.CHEST_DROP_CHANCE < 0.5, "шанс доп. сундука разумный")
+
+
+func _test_poison() -> void:
+	print("-- Отравление: стаки, затухание, снижение характеристик --")
+	_check(absf(Hero.poison_pct(0)) < 0.001, "без стаков снижения нет")
+	_check(absf(Hero.poison_pct(1) - 0.05) < 0.001, "1 стак отравления → −5%")
+	_check(absf(Hero.poison_pct(2) - 0.08) < 0.001, "2 стака отравления → −8% (с затуханием)")
+	_check(Hero.poison_pct(3) > Hero.poison_pct(2) and Hero.poison_pct(3) < 0.10, "3 стака → между 8% и 10%")
+	_check(Hero.poison_pct(10) < 0.13, "затухание: даже 10 стаков далеки от 50%")
+
+	var h := Hero.new()
+	var b := BattleScreen.new()
+	b.hero = h
+	b.wave = 1
+	b._ready()
+	var clean_atk: float = b._hero_actor.stats["atk"]
+
+	b._hero_actor.add_poison()
+	_check(b._hero_actor.poison_times.size() == 1, "стак отравления наложен")
+	var atk1: float = b._hero_actor.stats["atk"]
+	_check(atk1 < clean_atk, "сила героя снижена отравлением")
+	_check(b._hero_actor._badge.visible and b._hero_actor._badge.stacks == 1, "значок показывает 1 стак")
+
+	b._hero_actor.add_poison()
+	_check(float(b._hero_actor.stats["atk"]) < atk1, "второй стак усиливает снижение")
+	_check(b._hero_actor._badge.stacks == 2, "значок показывает 2 стака")
+	_check("%%" in b._hero_actor._badge.tooltip_text or "%" in b._hero_actor._badge.tooltip_text, "в подсказке значка — конкретный процент снижения")
+
+	# У каждого стака свой таймер: первый истекает раньше второго
+	b._hero_actor.poison_times[0] = 0.05
+	b._hero_actor.step(0.1)
+	_check(b._hero_actor.poison_times.size() == 1, "истёк только самый старый стак")
+	b._hero_actor.step(10.0)
+	_check(b._hero_actor.poison_times.is_empty(), "все стаки истекли")
+	_check(float(b._hero_actor.stats["atk"]) == clean_atk, "после отравления сила восстановилась")
+	_check(not b._hero_actor._badge.visible, "значок скрыт без стаков")
+	b.free()
 
 
 func _test_chests_heal_speed() -> void:
