@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_test_hero()
 	_test_heroes_roster()
 	_test_class_slots()
+	_test_diminishing()
 	_test_settings()
 	_test_rings_and_regen()
 	_test_inventory()
@@ -68,12 +69,10 @@ func _process(_delta: float) -> bool:
 	return false
 
 
-## Победа над боссом → главное меню; выбор второго героя → его собственный забег.
+## Победа над боссом → главное меню; новый забег всегда начинается с нуля.
 func _test_victory_flow(main) -> void:
-	print("-- Победа → главное меню, второй герой --")
+	print("-- Победа → главное меню, новый забег с нуля --")
 	main._on_boss_defeated()
-	_check(main.wins == 1, "победа над боссом засчитана")
-	_check(main.hero.wave == 1, "новый заход начинается с 1-й волны")
 	var btn := _find_button(main._screen)
 	_check(btn != null, "на экране победы есть кнопка")
 	if btn != null:
@@ -81,9 +80,9 @@ func _test_victory_flow(main) -> void:
 	_check(main._screen is MainMenu, "после победы игрок попадает в главное меню")
 	main._on_menu_start("rogue")
 	_check(main.hero.kind == "rogue", "выбран второй герой")
-	_check(main.heroes.size() == 2, "у каждого героя свой сохранённый прогресс")
-	_check(main.hero.wave == 1, "забег второго героя начинается с 1-й волны")
-	_check(main._screen is GearScreen, "после выбора второго героя — лагерь")
+	_check(main.hero.level == 1 and main.hero.wave == 1, "новый забег — с нуля (уровень 1, волна 1)")
+	_check(main.hero.inventory.is_empty(), "прогресс между забегами не сохраняется (рюкзак пуст)")
+	_check(main._screen is GearScreen, "после выбора героя — лагерь")
 
 
 func _find_button(node: Node) -> Button:
@@ -197,11 +196,15 @@ func _test_heroes_roster() -> void:
 	var h := Hero.new()
 	_check(h.kind == Hero.KINDS[0], "герой по умолчанию — первый из реестра")
 	h.kind = Hero.KINDS[1]
-	_check(h.hero_name() == Hero.ROSTER[Hero.KINDS[1]]["name"], "имя героя соответствует выбранному виду")
+	_check(h.hero_name() == Hero.ROSTER[Hero.KINDS[1]]["name"], "имя героя соответствует выбранному классу")
 	_check(h.wave == 1, "забег героя начинается с 1-й волны")
-	# Вид героя не влияет на характеристики (отличия пока только визуальные)
+	# Базовые характеристики классов пока одинаковые (отличия — слоты и классовая характеристика)
 	var h2 := Hero.new()
-	_check(h.get_stats() == h2.get_stats(), "у всех героев одинаковые характеристики")
+	var same := true
+	for k in Hero.STAT_ORDER:
+		if h.get_stats()[k] != h2.get_stats()[k]:
+			same = false
+	_check(same, "базовые характеристики классов одинаковые")
 
 
 func _test_settings() -> void:
@@ -269,6 +272,78 @@ func _test_class_slots() -> void:
 			knight_saw_shield = true
 	_check(knight_saw_shield, "Рыцарю щиты выпадают")
 
+	# Предметы на уворот — только Вору, на блок — только Рыцарю
+	rng.seed = 99
+	var rogue_saw_block := false
+	var rogue_saw_dodge := false
+	for i in 400:
+		var it := Item.generate(rng, -1, 8, [], false, "rogue")
+		if it.bonuses.has("block"):
+			rogue_saw_block = true
+		if it.bonuses.has("dodge"):
+			rogue_saw_dodge = true
+	_check(rogue_saw_dodge, "Вору выпадают предметы на уворот")
+	_check(not rogue_saw_block, "Вору не выпадают предметы на блок")
+	rng.seed = 99
+	var knight_saw_dodge := false
+	var knight_saw_block := false
+	for i in 400:
+		var it2 := Item.generate(rng, -1, 8, [], false, "knight")
+		if it2.bonuses.has("dodge"):
+			knight_saw_dodge = true
+		if it2.bonuses.has("block"):
+			knight_saw_block = true
+	_check(knight_saw_block, "Рыцарю выпадают предметы на блок")
+	_check(not knight_saw_dodge, "Рыцарю не выпадают предметы на уворот")
+
+
+func _test_diminishing() -> void:
+	print("-- Формулы затухания: защита %, скорость, регенерация, уворот/блок --")
+	var e0 := Hero.effective({"def": 0, "spd": 0, "regen": 0})
+	_check(absf(e0["def_pct"]) < 0.001, "без защиты снижение урона 0%")
+	var e15 := Hero.effective({"def": 15, "spd": 0, "regen": 0})
+	_check(absf(e15["def_pct"] - 0.5) < 0.001, "защита 15 → снижение 50%")
+	var e30 := Hero.effective({"def": 30, "spd": 0, "regen": 0})
+	_check(e30["def_pct"] > e15["def_pct"] and e30["def_pct"] < 0.7, "защита 30 → меньше 70%")
+	var inc1: float = e15["def_pct"] - e0["def_pct"]
+	var inc2: float = e30["def_pct"] - e15["def_pct"]
+	_check(inc2 < inc1, "прирост защиты затухает: вторые +15 дают меньше первых")
+
+	_check(absf(e0["aps"] - 1.0) < 0.001, "без очков скорости — базовый темп 1.00 уд/с")
+	var s10 := Hero.effective({"spd": 10, "def": 0, "regen": 0})
+	_check(absf(s10["aps"] - 2.0) < 0.001, "скорость 10 → 2.00 уд/с")
+	_check(s10["aps"] < 1.0 + Hero.SPD_CAP, "темп ниже максимума формулы")
+	var r12 := Hero.effective({"regen": 12, "def": 0, "spd": 0})
+	_check(absf(r12["regen_hp"] - 4.0) < 0.001, "регенерация 12 → 4 HP/с")
+	var d15 := Hero.effective({"dodge": 15})
+	_check(absf(d15["class_pct"] - 0.3) < 0.001, "уворот 15 → шанс 30%")
+
+	# Урон снижается на процент защиты цели
+	var attacker := Actor.new()
+	attacker.setup("атакующий", {"hp": 10, "atk": 10, "spd": 1.0}, Color.WHITE, "rect", 10.0, "hero")
+	var victim := Actor.new()
+	victim.setup("цель", {"hp": 100, "atk": 1, "spd": 1.0}, Color.WHITE, "rect", 10.0, "enemy")
+	victim.def_pct = 0.5
+	attacker.target = victim
+	attacker._attack()
+	_check(victim.hp == 95.0, "урон 10 по защите 50% → 5")
+	# Уворот/блок: при 100% атака полностью избегается
+	victim.evasion = 1.0
+	victim.hp = 95.0
+	attacker._attack()
+	_check(victim.hp == 95.0, "уворот 100% → урон полностью избегнут")
+	attacker.free()
+	victim.free()
+
+	# Классовую характеристику нельзя качать очками за уровень
+	var rr := Hero.new("rogue")
+	rr.stat_points = 3
+	_check(not rr.allocate("dodge"), "уворот нельзя качать очками — только предметы")
+	var kk := Hero.new("knight")
+	kk.stat_points = 3
+	_check(not kk.allocate("block"), "блок нельзя качать очками — только предметы")
+	_check(rr.stat_order().has("dodge") and not rr.stat_order().has("block"), "у Вора отображается уворот, а не блок")
+
 
 func _make_ring(p_name: String) -> Item:
 	var r := Item.new()
@@ -312,11 +387,11 @@ func _test_rings_and_regen() -> void:
 	regen_ring.name = "Кольцо регенерации"
 	regen_ring.slot = "ring"
 	regen_ring.rarity = 0
-	regen_ring.bonuses = {"regen": 0.5}
+	regen_ring.bonuses = {"regen": 3}
 	h.inventory.append(regen_ring)
 	h.equip(regen_ring)
-	var expected := Hero.PER_POINT["regen"] + 0.5
-	_check(absf(h.get_stats()["regen"] - expected) < 0.001, "регенерация = очко + кольцо (%.2f)" % expected)
+	var expected := Hero.PER_POINT["regen"] + 3.0
+	_check(absf(h.get_stats()["regen"] - expected) < 0.001, "регенерация = очко + кольцо (%.0f очков)" % expected)
 
 	# Регенерация работает в бою
 	var a := Actor.new()
@@ -406,10 +481,8 @@ func _test_enemies() -> void:
 	_check(w9["golem"] > w9["slime"] and w9["wolf"] > w1["wolf"], "сильные враги чаще к 9 волне")
 
 	var base: Dictionary = Enemies.TYPES["slime"]
-	var scaled := Enemies.scaled("slime", 5, 0)
+	var scaled := Enemies.scaled("slime", 5)
 	_check(int(scaled["hp"]) > int(base["hp"]), "враги усиливаются к 5 волне")
-	var ng := Enemies.scaled("slime", 1, 2)
-	_check(int(ng["hp"]) > int(base["hp"]), "новый заход сложнее")
 
 	_check(Enemies.BASE_CHESTS == 1, "1 гарантированный сундук за волну")
 	_check(Enemies.CHEST_DROP_CHANCE > 0.0 and Enemies.CHEST_DROP_CHANCE < 0.5, "шанс доп. сундука разумный")
@@ -421,7 +494,6 @@ func _test_chests_heal_speed() -> void:
 	var b := BattleScreen.new()
 	b.hero = h
 	b.wave = 1
-	b.wins = 0
 	b._ready()
 
 	# Сундук с врага: 1 случайный предмет сразу, без выбора
@@ -467,7 +539,6 @@ func _test_chests_heal_speed() -> void:
 	var b2 := BattleScreen.new()
 	b2.hero = Hero.new()
 	b2.wave = 1
-	b2.wins = 0
 	b2._ready()
 	_check(Engine.time_scale == 2.0, "скорость боя сохраняется в новом бою")
 	b2.set_speed(1.0)
@@ -482,7 +553,6 @@ func _test_battle_sim() -> void:
 	var b := BattleScreen.new()
 	b.hero = h
 	b.wave = 1
-	b.wins = 0
 	b._ready()
 
 	var dt := 0.05
@@ -524,11 +594,10 @@ func _open_field_chests(b: BattleScreen) -> void:
 		b._on_chest_clicked(c)
 
 
-func _run_battle(h: Hero, wave: int, wins: int) -> BattleScreen:
+func _run_battle(h: Hero, wave: int) -> BattleScreen:
 	var b := BattleScreen.new()
 	b.hero = h
 	b.wave = wave
-	b.wins = wins
 	b._ready()
 	var dt := 0.05
 	var steps := 0
@@ -563,14 +632,15 @@ func _test_boss_sims() -> void:
 		it.bonuses = {"atk": 8, "hp": 20, "def": 4}
 		strong.inventory.append(it)
 		strong.equip(it)
-	var b1 := _run_battle(strong, Enemies.TOTAL_WAVES, 0)
+	var b1 := _run_battle(strong, Enemies.TOTAL_WAVES)
 	_check(b1._state == "done", "бой с боссом завершился")
 	_check(b1._hero_actor.alive, "прокачанный герой победил босса")
+	_check(b1._boss_dead and b1._chests.is_empty(), "победа над боссом — сразу, без фазы сундуков")
 	b1.free()
 
 	# Голый герой 1 уровня должен проиграть (и игра это корректно обрабатывает)
 	var weak := Hero.new()
-	var b2 := _run_battle(weak, Enemies.TOTAL_WAVES, 0)
+	var b2 := _run_battle(weak, Enemies.TOTAL_WAVES)
 	_check(b2._state == "done", "бой слабого героя завершился")
 	_check(not b2._hero_actor.alive, "слабый герой пал — путь поражения работает")
 	b2.free()

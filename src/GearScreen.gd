@@ -12,7 +12,6 @@ signal embark_pressed
 ## Входные данные (заполняет Main)
 var hero: Hero
 var wave := 1
-var wins := 0
 var message := ""
 
 const SLOT_DISPLAY := {"weapon": "Оружие", "weapon1": "Оружие I", "weapon2": "Оружие II", "shield": "Щит", "armor": "Броня", "amulet": "Амулет", "ring1": "Кольцо I", "ring2": "Кольцо II"}
@@ -98,12 +97,6 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	wave_lbl.add_theme_font_size_override("font_size", 18)
 	bar.add_child(wave_lbl)
 
-	var wins_lbl := Label.new()
-	wins_lbl.text = "Побед над боссом: %d" % wins
-	wins_lbl.add_theme_font_size_override("font_size", 18)
-	wins_lbl.modulate = Color(0.95, 0.85, 0.4)
-	bar.add_child(wins_lbl)
-
 	# Отступ под кнопку настроек (шестерёнка в правом верхнем углу)
 	var gear_gap := Control.new()
 	gear_gap.custom_minimum_size.x = 40
@@ -150,8 +143,10 @@ func _build_hero_panel(columns: HBoxContainer) -> void:
 	box.add_child(points)
 
 	var stats := hero.get_stats()
-	for key in Item.STAT_ORDER:
+	var eff := Hero.effective(stats)
+	for key in hero.stat_order():
 		var row := HBoxContainer.new()
+		row.tooltip_text = _stat_tooltip(key, stats, eff)
 		box.add_child(row)
 
 		var name_lbl := Label.new()
@@ -160,18 +155,34 @@ func _build_hero_panel(columns: HBoxContainer) -> void:
 		row.add_child(name_lbl)
 
 		var val := Label.new()
-		val.text = "%.2f" % stats[key] if key == "spd" or key == "regen" else str(int(stats[key]))
+		val.text = str(int(stats[key]))
 		val.add_theme_font_size_override("font_size", 18)
 		val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(val)
 
-		var plus := Button.new()
-		plus.text = "+"
-		plus.custom_minimum_size = Vector2(34, 30)
-		plus.visible = hero.stat_points > 0
-		plus.tooltip_text = "+%s за очко" % str(Hero.PER_POINT[key])
-		plus.pressed.connect(_on_stat_plus.bind(key))
-		row.add_child(plus)
+		# Классовую характеристику (уворот/блок) очками качать нельзя — только предметы
+		if Hero.PER_POINT.has(key):
+			var plus := Button.new()
+			plus.text = "+"
+			plus.custom_minimum_size = Vector2(34, 30)
+			plus.visible = hero.stat_points > 0
+			plus.tooltip_text = "+%s за очко" % str(Hero.PER_POINT[key])
+			plus.pressed.connect(_on_stat_plus.bind(key))
+			row.add_child(plus)
+
+
+## Подсказка при наведении на характеристику: реальное боевое значение.
+func _stat_tooltip(key: String, _stats: Dictionary, eff: Dictionary) -> String:
+	match key:
+		"def":
+			return "Реальное снижение входящего урона: %d%%" % roundi(eff["def_pct"] * 100.0)
+		"spd":
+			return "Реальный темп атаки: %.2f уд/с (база — 1.00)" % eff["aps"]
+		"regen":
+			return "Реальная регенерация: %.1f HP/с" % eff["regen_hp"]
+		"dodge", "block":
+			return "Реальный шанс: %d%%\nОчками не качается — растёт только от предметов" % roundi(eff["class_pct"] * 100.0)
+	return ""
 
 
 ## Панель экипировки: 5 ячеек-слотов с иконками.

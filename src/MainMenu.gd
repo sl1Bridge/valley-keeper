@@ -8,9 +8,7 @@ extends Control
 signal start_pressed(kind: String)
 
 ## Входные данные (заполняет Main)
-var heroes := {}            # kind -> Hero (героя может ещё не быть — забег не начат)
 var selected_kind := ""     # ранее выбранный герой ("" — ещё не выбирали)
-var wins := 0
 var message := ""
 
 var _list_buttons := {}     # kind -> Button
@@ -58,13 +56,6 @@ func _build() -> void:
 	title.add_theme_font_size_override("font_size", 52)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(title)
-
-	var wins_lbl := Label.new()
-	wins_lbl.text = "Побед над боссом: %d" % wins
-	wins_lbl.add_theme_font_size_override("font_size", 20)
-	wins_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	wins_lbl.modulate = Color(0.95, 0.85, 0.4)
-	root.add_child(wins_lbl)
 
 	var columns := HBoxContainer.new()
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -212,13 +203,7 @@ func _refresh_preview() -> void:
 		return
 	_name_label.text = Hero.ROSTER[selected_kind]["name"]
 	_desc_label.text = Hero.ROSTER[selected_kind]["desc"]
-	var h: Hero = heroes.get(selected_kind)
-	if h == null:
-		_info_label.text = "Новый герой — забег ещё не начат."
-	elif h.wave >= Enemies.TOTAL_WAVES:
-		_info_label.text = "Уровень: %d\nЗабег: финальный босс" % h.level
-	else:
-		_info_label.text = "Уровень: %d\nЗабег: волна %d / %d" % [h.level, h.wave, Enemies.TOTAL_WAVES]
+	_info_label.text = "Забег: %d волн, в конце — босс.\nПрогресс между забегами не сохраняется." % Enemies.TOTAL_WAVES
 	_start_btn.disabled = false
 
 

@@ -6,22 +6,26 @@ extends RefCounted
 
 const STAT_ORDER := ["hp", "atk", "def", "spd", "regen"]
 
-## Реестр героев (классы). Отличаются внешностью и набором слотов экипировки:
-## у Рыцаря есть слот под щит, у Вора — два слота под оружие.
-## Характеристики пока одинаковые. Имена, описания и внешность временные.
+## Классовая характеристика: есть только у своего класса.
+## Очками за уровень не качается — растёт только от предметов.
+const CLASS_STAT := {"knight": "block", "rogue": "dodge"}
+
+## Реестр героев (классы). Рыцарь — защитный: слот под щит и шанс блока.
+## Вор — боевой: два слота под оружие и шанс уворота.
+## Базовые характеристики пока одинаковые. Имена, описания и внешность временные.
 const KINDS := ["knight", "rogue"]
 const ROSTER := {
 	"knight": {
 		"name": "Рыцарь",
 		"color": Color(0.25, 0.45, 0.9),
 		"shape": "rect",
-		"desc": "Надёжный защитник долины. Носит щит — дополнительный слот снаряжения для защиты.",
+		"desc": "Надёжный защитник долины. Носит щит и умеет блокировать вражеские атаки.",
 	},
 	"rogue": {
 		"name": "Вор",
 		"color": Color(0.5, 0.32, 0.62),
 		"shape": "triangle",
-		"desc": "Быстрый и смертоносный. Сражается двумя клинками — два слота под оружие.",
+		"desc": "Быстрый и смертоносный. Сражается двумя клинками и уклоняется от атак.",
 	},
 }
 
@@ -31,12 +35,22 @@ const CLASS_SLOTS := {
 	"rogue": ["weapon1", "weapon2", "armor", "amulet", "ring1", "ring2"],
 }
 
-# Базовые характеристики героя 1 уровня
-const BASE := {"hp": 30, "atk": 5, "def": 1, "spd": 1.0, "regen": 0.0}
-# Прирост за 1 очко характеристики (регенерация — HP в секунду)
-const PER_POINT := {"hp": 8, "atk": 2, "def": 1, "spd": 0.15, "regen": 0.4}
+# Базовые характеристики героя 1 уровня (сырые очки; скорость и регенерация — с нуля)
+const BASE := {"hp": 30, "atk": 5, "def": 1, "spd": 0.0, "regen": 0.0}
+# Прирост за 1 очко характеристики
+const PER_POINT := {"hp": 8, "atk": 2, "def": 1, "spd": 1.0, "regen": 1.0}
 # Очков характеристик за уровень
-const POINTS_PER_LEVEL := 2
+const POINTS_PER_LEVEL := 1
+
+## Формула затухания: cap × raw / (raw + K). Чем больше сырых очков,
+## тем меньше прирост от следующего очка. Константы временные, уточнить по игротестам.
+const DEF_K := 15.0    # защита: def/(def+15) — доля снижения урона (асимптота 100%)
+const SPD_CAP := 2.0   # скорость атаки: до +200% к темпу (максимум 3 уд/с)
+const SPD_K := 10.0
+const REGEN_CAP := 8.0  # регенерация: до 8 HP/с
+const REGEN_K := 12.0
+const CLASS_CAP := 0.6  # уворот/блок: до 60%
+const CLASS_K := 15.0
 # Фиксированное восстановление здоровья за передышку между волнами
 const REST_HEAL := 25.0
 # Доля максимального здоровья, восстанавливаемая при повышении уровня в бою
@@ -100,19 +114,45 @@ func body_shape() -> String:
 	return ROSTER[kind]["shape"]
 
 
-## Итоговые характеристики: база + вложенные очки + бонусы предметов.
+## Итоговые сырые очки: база + вложенные очки + бонусы предметов.
+## Включает классовую характеристику (block/dodge) — она только от предметов.
+## Реальные боевые значения из сырых очков считает effective().
 func get_stats() -> Dictionary:
 	var s := {}
 	for k in STAT_ORDER:
 		s[k] = float(BASE[k]) + float(PER_POINT[k]) * allocated[k]
+	s[CLASS_STAT[kind]] = 0.0
 	for slot in equipment:
 		var it: Item = equipment[slot]
 		if it != null:
 			for k in it.bonuses:
 				s[k] = s.get(k, 0.0) + it.bonuses[k]
-	s["spd"] = maxf(0.3, snappedf(s["spd"], 0.01))
 	s["hp"] = maxf(1.0, s["hp"])
 	return s
+
+
+## Формула затухания: cap × raw / (raw + K). При raw = K достигается половина cap.
+static func diminish(raw: float, cap: float, k: float) -> float:
+	return cap * raw / (raw + k)
+
+
+## Реальные боевые значения из сырых очков:
+## def_pct — доля снижения урона, aps — атак в секунду,
+## regen_hp — HP/с, class_pct — шанс уворота/блока.
+static func effective(stats: Dictionary) -> Dictionary:
+	var e := {}
+	e["def_pct"] = diminish(maxf(0.0, stats.get("def", 0.0)), 1.0, DEF_K)
+	var spd_raw: float = maxf(stats.get("spd", 0.0), -SPD_K + 1.0)
+	e["aps"] = maxf(0.2, 1.0 + diminish(spd_raw, SPD_CAP, SPD_K))
+	e["regen_hp"] = diminish(maxf(0.0, stats.get("regen", 0.0)), REGEN_CAP, REGEN_K)
+	var class_raw: float = maxf(0.0, stats.get("dodge", stats.get("block", 0.0)))
+	e["class_pct"] = diminish(class_raw, CLASS_CAP, CLASS_K)
+	return e
+
+
+## Характеристики для отображения в лагере: 5 общих + классовая.
+func stat_order() -> Array:
+	return STAT_ORDER + [CLASS_STAT[kind]]
 
 
 ## Сколько опыта нужно для следующего уровня.

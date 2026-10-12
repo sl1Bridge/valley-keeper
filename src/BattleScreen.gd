@@ -8,6 +8,7 @@ extends Control
 ## С врагов с шансом падают сундуки (1 случайный предмет), после победы над всеми
 ## врагами в центре появляется финальный сундук (выбор 1 из 3, награды реже).
 ## Сундуки открываются кликом; волна завершается, только когда собраны все сундуки.
+## Исключение — босс: его гибель сразу завершает забег победой, без фазы сундуков.
 ## Бой можно ускорять: x1 / x2.
 
 signal wave_cleared
@@ -32,7 +33,6 @@ const FORMATIONS := {
 ## Входные данные (заполняет Main до добавления на сцену)
 var hero: Hero
 var wave := 1
-var wins := 0
 
 ## Выбранная скорость боя запоминается между боями (сессия игры).
 static var persisted_speed := 1.0
@@ -122,18 +122,37 @@ func _build_hud() -> void:
 
 func _spawn_hero() -> void:
 	_hero_actor = Actor.new()
-	var stats := hero.get_stats()
 	# Имя и внешность — из реестра героев (выбор в главном меню)
-	_hero_actor.setup(hero.hero_name(), stats, hero.body_color(), hero.body_shape(), 30.0, "hero")
+	_hero_actor.setup(hero.hero_name(), _hero_battle_stats(), hero.body_color(), hero.body_shape(), 30.0, "hero")
 	# Герой входит в бой с тем здоровьем, что осталось после прошлой волны + передышка
 	_hero_actor.hp = clampf(hero.start_hp(), 1.0, _hero_actor.max_hp)
-	_hero_actor.regen = float(stats.get("regen", 0.0))
 	_hero_actor.position = HERO_POS
 	_hero_actor.engaged = true
 	_hero_actor.died.connect(_on_hero_died)
 	_hero_actor.damaged.connect(_on_actor_damaged)
 	_hero_actor.attacked.connect(_on_actor_attacked)
+	_hero_actor.evaded.connect(_on_actor_evaded)
 	_world.add_child(_hero_actor)
+
+
+## Боевые характеристики героя: сырые очки превращаем в реальные значения
+## (атак/с, % защиты, HP/с регенерации, шанс уворота/блока).
+func _hero_battle_stats() -> Dictionary:
+	var stats := hero.get_stats()
+	var eff := Hero.effective(stats)
+	stats["spd"] = eff["aps"]
+	_apply_hero_effects(_hero_actor, eff)
+	return stats
+
+
+## Применить к бойцу производные характеристики героя (защита %, реген, уворот/блок).
+func _apply_hero_effects(a: Actor, eff: Dictionary) -> void:
+	if a == null:
+		return
+	a.def_pct = eff["def_pct"]
+	a.regen = eff["regen_hp"]
+	a.evasion = eff["class_pct"]
+	a.evasion_label = "Блок!" if hero.kind == "knight" else "Уворот!"
 
 
 ## Остаток здоровья героя (Main забирает после боя).
@@ -149,10 +168,12 @@ func _spawn_enemies() -> void:
 	var formation: Array = FORMATIONS[mini(comp.size(), Enemies.MAX_ENEMIES)]
 	for i in comp.size():
 		var type: String = comp[i]
-		var stats := Enemies.scaled(type, wave, wins)
+		var stats := Enemies.scaled(type, wave)
 		var def: Dictionary = Enemies.TYPES[type]
 		var e := Actor.new()
 		e.setup(stats["name"], stats, def["color"], def["shape"], def["size"], "enemy")
+		# Защита врага — по той же формуле затухания, что и у героя
+		e.def_pct = Hero.diminish(float(stats.get("def", 0)), 1.0, Hero.DEF_K)
 		if type == "boss":
 			e.position = BOSS_POS
 		else:
@@ -162,6 +183,7 @@ func _spawn_enemies() -> void:
 		e.died.connect(_on_enemy_died)
 		e.damaged.connect(_on_actor_damaged)
 		e.attacked.connect(_on_actor_attacked)
+		e.evaded.connect(_on_actor_evaded)
 		_world.add_child(e)
 		_enemies.append(e)
 	_pick_hero_target()
@@ -204,6 +226,7 @@ func step(_delta: float) -> void:
 
 func _on_enemy_died(e: Actor) -> void:
 	_kills += 1
+	var is_boss: bool = e.stats.get("type", "") == "boss"
 
 	# Опыт и уровни
 	var xp: int = int(e.stats.get("xp", 1))
@@ -211,15 +234,15 @@ func _on_enemy_died(e: Actor) -> void:
 	_spawn_popup("+%d опыта" % xp, e.position + Vector2(-30, -e.radius * 2.0 - 40), Color(0.95, 0.9, 0.4), 18)
 	if levels > 0:
 		# Новый уровень: характеристики пересчитываются, герой лечится на часть от максимума
-		_hero_actor.stats = hero.get_stats()
+		_hero_actor.stats = _hero_battle_stats()
 		_hero_actor.max_hp = int(_hero_actor.stats["hp"])
 		var healed: float = _hero_actor.max_hp * Hero.LEVEL_UP_HEAL
 		_hero_actor.hp = minf(_hero_actor.max_hp, _hero_actor.hp + healed)
 		_hero_actor.queue_redraw()
-		_spawn_popup("Уровень %d! +%d HP, +%d очка характеристик" % [hero.level, int(healed), Hero.POINTS_PER_LEVEL], _hero_actor.position + Vector2(-160, -_hero_actor.radius * 2.0 - 70), Color(0.5, 1.0, 0.6), 24)
+		_spawn_popup("Уровень %d! +%d HP, +%d очко характеристик" % [hero.level, int(healed), Hero.POINTS_PER_LEVEL], _hero_actor.position + Vector2(-160, -_hero_actor.radius * 2.0 - 70), Color(0.5, 1.0, 0.6), 24)
 
-	# Шанс сундука с врага: остаётся лежать на месте погибшего, открывается кликом
-	if _rng.randf() < Enemies.CHEST_DROP_CHANCE:
+	# Шанс сундука с врага (с босса сундуки не падают — победа сразу)
+	if not is_boss and _rng.randf() < Enemies.CHEST_DROP_CHANCE:
 		_spawn_chest(e.position, false)
 		_spawn_popup("Выпал сундук!", e.position + Vector2(-30, -e.radius * 2.0 - 75), Color(0.95, 0.8, 0.3), 20)
 
@@ -227,8 +250,13 @@ func _on_enemy_died(e: Actor) -> void:
 	if _hero_actor.target == e:
 		_pick_hero_target()
 
-	if e.stats.get("type", "") == "boss":
+	if is_boss:
 		_boss_dead = true
+		# Победа над боссом — сразу, открывать оставшиеся сундуки не нужно
+		_state = "done"
+		_hero_actor.engaged = false
+		_show_center("Босс повержен!")
+		_emit_deferred(boss_defeated)
 
 	_update_hud()
 
@@ -246,6 +274,11 @@ func _on_hero_died(_a: Actor) -> void:
 func _on_actor_damaged(a: Actor, amount: int) -> void:
 	var col := Color(1, 0.45, 0.4) if a.team == "hero" else Color(1, 1, 1)
 	_spawn_popup("-%d" % amount, a.position + Vector2(randf_range(-14, 14), -a.radius * 2.0 - 26), col, 16)
+
+
+## Уворот/блок: всплывающая надпись («Уворот!» у Вора, «Блок!» у Рыцаря).
+func _on_actor_evaded(a: Actor) -> void:
+	_spawn_popup(a.evasion_label, a.position + Vector2(-24, -a.radius * 2.0 - 58), Color(0.6, 0.9, 1.0), 20)
 
 
 ## «Снаряд»: точка летит от атакующего к цели.

@@ -64,10 +64,10 @@ static func wave_composition(wave: int, rng: RandomNumberGenerator = null) -> Ar
 	return list
 
 
-## Характеристики врага с учётом волны и числа побед над боссом (новый заход сложнее).
-static func scaled(type: String, wave: int, wins: int) -> Dictionary:
+## Характеристики врага с учётом волны.
+static func scaled(type: String, wave: int) -> Dictionary:
 	var base: Dictionary = TYPES[type].duplicate()
-	var f := 1.0 + 0.1 * (wave - 1) + 0.25 * wins
+	var f := 1.0 + 0.1 * (wave - 1)
 	base["hp"] = maxi(1, roundi(base["hp"] * f))
 	base["atk"] = maxi(1, roundi(base["atk"] * f))
 	base["def"] = roundi(base["def"] * (1.0 + 0.1 * (wave - 1)))

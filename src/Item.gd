@@ -15,8 +15,8 @@ const RARITY_COLORS := [
 	Color(0.9, 0.3, 0.25),    # артефакт — красный
 ]
 const SLOT_NAMES := {"weapon": "Оружие", "shield": "Щит", "armor": "Броня", "amulet": "Амулет", "ring": "Кольцо"}
-const STAT_NAMES := {"hp": "Здоровье", "atk": "Сила атаки", "def": "Защита", "spd": "Скорость атаки", "regen": "Регенерация"}
-const STAT_ORDER := ["hp", "atk", "def", "spd", "regen"]
+const STAT_NAMES := {"hp": "Здоровье", "atk": "Сила атаки", "def": "Защита", "spd": "Скорость атаки", "regen": "Регенерация", "dodge": "Шанс уворота", "block": "Шанс блока"}
+const STAT_ORDER := ["hp", "atk", "def", "spd", "regen", "dodge", "block"]
 
 # Множитель силы бонусов по редкости (временные значения, уточнить по игротестам)
 const RARITY_MULT := [1.0, 1.3, 1.6, 2.0, 2.5, 3.2]
@@ -24,29 +24,34 @@ const RARITY_MULT := [1.0, 1.3, 1.6, 2.0, 2.5, 3.2]
 # Базовые веса редкостей на 1-й волне (временные значения)
 const RARITY_BASE_WEIGHTS := [70.0, 20.0, 7.0, 2.2, 0.7, 0.1]
 # Сдвиг весов к старшим редкостям за каждую волну после первой
-const RARITY_WAVE_SHIFT := 0.09
+const RARITY_WAVE_SHIFT := 0.05
 # Дополнительный сдвиг для финального сундука волны
-const RARITY_RICH_SHIFT := 0.8
+const RARITY_RICH_SHIFT := 0.6
 
 # Шаблоны предметов: имя, слот, базовые бонусы (для обычной редкости).
+# Бонусы — сырые очки (скорость и регенерация тоже в очках, не в готовых значениях).
 # Поле "class" — классовый предмет: выпадает только герою этого класса.
 const TEMPLATES := [
 	{"name": "Ржавый меч", "slot": "weapon", "bonuses": {"atk": 3}},
 	{"name": "Топор лесника", "slot": "weapon", "bonuses": {"atk": 2, "hp": 4}},
-	{"name": "Кинжал странника", "slot": "weapon", "bonuses": {"atk": 2, "spd": 0.15}},
-	{"name": "Молот кузнеца", "slot": "weapon", "bonuses": {"atk": 4, "spd": -0.1}},
+	{"name": "Кинжал странника", "slot": "weapon", "bonuses": {"atk": 2, "spd": 3}},
+	{"name": "Молот кузнеца", "slot": "weapon", "bonuses": {"atk": 4, "spd": -2}},
+	{"name": "Кинжал акробата", "slot": "weapon", "bonuses": {"atk": 2, "dodge": 3}, "class": "rogue"},
 	{"name": "Щит ополченца", "slot": "shield", "bonuses": {"def": 2, "hp": 3}, "class": "knight"},
-	{"name": "Башенный щит", "slot": "shield", "bonuses": {"def": 3, "spd": -0.05}, "class": "knight"},
+	{"name": "Башенный щит", "slot": "shield", "bonuses": {"def": 3, "spd": -1}, "class": "knight"},
+	{"name": "Щит бастиона", "slot": "shield", "bonuses": {"def": 2, "block": 3}, "class": "knight"},
 	{"name": "Кожаная куртка", "slot": "armor", "bonuses": {"def": 1, "hp": 4}},
 	{"name": "Кольчуга", "slot": "armor", "bonuses": {"def": 2}},
-	{"name": "Плащ тени", "slot": "armor", "bonuses": {"def": 1, "spd": 0.1}},
-	{"name": "Каменный оберег", "slot": "amulet", "bonuses": {"hp": 5, "regen": 0.3}},
-	{"name": "Оберег волка", "slot": "amulet", "bonuses": {"atk": 1, "spd": 0.1}},
+	{"name": "Плащ тени", "slot": "armor", "bonuses": {"def": 1, "spd": 2}},
+	{"name": "Плащ ускользания", "slot": "armor", "bonuses": {"def": 1, "dodge": 4}, "class": "rogue"},
+	{"name": "Каменный оберег", "slot": "amulet", "bonuses": {"hp": 5, "regen": 3}},
+	{"name": "Оберег волка", "slot": "amulet", "bonuses": {"atk": 1, "spd": 2}},
 	{"name": "Солнечный медальон", "slot": "amulet", "bonuses": {"hp": 5, "def": 1}},
-	{"name": "Перо ветра", "slot": "amulet", "bonuses": {"spd": 0.2}},
-	{"name": "Кольцо жизни", "slot": "ring", "bonuses": {"hp": 6, "regen": 0.3}},
+	{"name": "Перо ветра", "slot": "amulet", "bonuses": {"spd": 4}},
+	{"name": "Кольцо жизни", "slot": "ring", "bonuses": {"hp": 6, "regen": 3}},
 	{"name": "Кольцо клинка", "slot": "ring", "bonuses": {"atk": 2}},
-	{"name": "Кольцо прилива", "slot": "ring", "bonuses": {"regen": 0.4}},
+	{"name": "Кольцо прилива", "slot": "ring", "bonuses": {"regen": 4}},
+	{"name": "Кольцо стража", "slot": "ring", "bonuses": {"block": 3}, "class": "knight"},
 ]
 
 static var _next_id := 1
@@ -112,12 +117,7 @@ static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, wave: 
 	it.bonuses = {}
 	for k in t["bonuses"]:
 		var v: float = t["bonuses"][k] * mult
-		if k == "spd" or k == "regen":
-			v = snappedf(v, 0.05)
-			if is_zero_approx(v):
-				v = 0.05 * signf(t["bonuses"][k])
-		else:
-			v = maxi(1, roundi(v)) if t["bonuses"][k] > 0 else mini(-1, roundi(v))
+		v = maxi(1, roundi(v)) if t["bonuses"][k] > 0 else mini(-1, roundi(v))
 		it.bonuses[k] = v
 	return it
 
@@ -134,12 +134,10 @@ func slot_name() -> String:
 	return SLOT_NAMES.get(slot, slot)
 
 
-## Текст вида "Сила атаки +3, Регенерация +0.30"
+## Текст вида "Сила атаки +3, Регенерация +2" (бонусы — целые сырые очки)
 func bonuses_text() -> String:
 	var parts := []
 	for k in STAT_ORDER:
 		if bonuses.has(k):
-			var v: float = bonuses[k]
-			var txt := ("%+.2f" % v) if k == "spd" or k == "regen" else ("%+d" % int(v))
-			parts.append("%s %s" % [STAT_NAMES[k], txt])
+			parts.append("%s %+d" % [STAT_NAMES[k], int(bonuses[k])])
 	return ", ".join(parts)

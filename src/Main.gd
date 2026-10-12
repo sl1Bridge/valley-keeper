@@ -1,15 +1,14 @@
 class_name GameMain
 extends Node
 
-## Корневой узел игры: хранит состояние (герои, забеги, победы) и переключает экраны.
+## Корневой узел игры: хранит состояние текущего забега и переключает экраны.
 ## Экраны: главное меню (MainMenu) → лагерь (GearScreen) → бой (BattleScreen) →
 ## победа/поражение → лагерь или главное меню.
-## Поверх всех экранов — кнопка настроек (шестерёнка в верхнем левом углу).
+## Прогресса между забегами нет: каждый забег начинается с новым героем 1 уровня.
+## Поверх всех экранов — кнопка настроек (шестерёнка в правом верхнем углу).
 
-var hero: Hero = null  # выбранный герой (данные текущего забега)
-var heroes := {}       # kind -> Hero: у каждого героя свой прогресс забега
+var hero: Hero = null  # герой текущего забега
 var selected_kind := ""
-var wins := 0
 
 var _screen: Control = null
 var _settings_layer: CanvasLayer
@@ -33,25 +32,18 @@ func _clear_screen() -> void:
 func show_menu(msg: String) -> void:
 	_clear_screen()
 	var menu := MainMenu.new()
-	menu.heroes = heroes
 	menu.selected_kind = selected_kind
-	menu.wins = wins
 	menu.message = msg
 	menu.start_pressed.connect(_on_menu_start)
 	add_child(menu)
 	_screen = menu
 
 
+## Начало забега: всегда новый герой 1 уровня, прогресс между забегами не сохраняется.
 func _on_menu_start(kind: String) -> void:
 	selected_kind = kind
-	var is_new := not heroes.has(kind)
-	if is_new:
-		heroes[kind] = Hero.new(kind)
-	hero = heroes[kind]
-	if is_new:
-		show_gear("Добро пожаловать в долину! Собери героя и жми «В путь».")
-	else:
-		show_gear("С возвращением! Проверь снарягу — и в путь.")
+	hero = Hero.new(kind)
+	show_gear("Забег начинается! Собери героя и жми «В путь».")
 
 
 # ---------- Лагерь и бой ----------
@@ -61,7 +53,6 @@ func show_gear(msg: String) -> void:
 	var gear := GearScreen.new()
 	gear.hero = hero
 	gear.wave = hero.wave
-	gear.wins = wins
 	gear.message = msg
 	gear.embark_pressed.connect(_on_embark)
 	add_child(gear)
@@ -73,7 +64,6 @@ func _on_embark() -> void:
 	var battle := BattleScreen.new()
 	battle.hero = hero
 	battle.wave = hero.wave
-	battle.wins = wins
 	battle.wave_cleared.connect(_on_wave_cleared)
 	battle.hero_died.connect(_on_hero_died)
 	battle.boss_defeated.connect(_on_boss_defeated)
@@ -101,14 +91,11 @@ func _on_hero_died() -> void:
 
 
 func _on_boss_defeated() -> void:
-	hero.full_restore()
-	wins += 1
-	hero.wave = 1
 	_show_end_screen(
 		"Победа!",
-		"Каменный страж повержен, долина спасена!\nПобед над боссом: %d.\nГерой сохранил всё, что накопил; новый заход будет сложнее." % wins,
+		"Каменный страж повержен, долина спасена!\nЗабег пройден. Следующий забег начнётся с нуля —\nпрогресс между забегами не сохраняется.",
 		"В главное меню",
-		func(): show_menu("Победа! Враги в новом заходе станут сильнее.")
+		func(): show_menu("Долина спасена! Выбери героя — новый забег ждёт.")
 	)
 
 

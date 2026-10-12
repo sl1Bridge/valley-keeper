@@ -7,13 +7,17 @@ extends Node2D
 signal died(actor)
 signal damaged(actor, amount)
 signal attacked(attacker, target)
+signal evaded(actor)
 
 var display_name := ""
 var team := "enemy"  # "hero" или "enemy"
-var stats := {}      # hp, atk, def, spd
+var stats := {}      # hp, atk, spd (атак/с)
 var max_hp := 1.0
 var hp := 1.0
 var regen := 0.0     # HP в секунду, работает прямо в бою
+var def_pct := 0.0   # доля снижения входящего урона (0..1)
+var evasion := 0.0   # шанс полностью избежать атаки (уворот/блок, 0..1)
+var evasion_label := "Уворот!"  # текст всплывающей надписи при избегании
 var body_color := Color.WHITE
 var shape := "rect"  # "rect" | "circle" | "triangle"
 var radius := 30.0
@@ -63,13 +67,19 @@ func _process(delta: float) -> void:
 func _attack() -> void:
 	if target == null or not target.alive:
 		return
-	var dmg := maxi(1, int(stats.get("atk", 1)) - int(target.stats.get("def", 0)))
+	# Защита цели снижает урон на процент (def_pct), минимум 1.
+	# Округление вниз: иначе мелкие атаки первых волн бьют больнее, чем раньше.
+	var dmg := maxi(1, floori(float(stats.get("atk", 1)) * (1.0 - target.def_pct)))
 	target.take_damage(dmg)
 	attacked.emit(self, target)
 
 
 func take_damage(dmg: int) -> void:
 	if not alive:
+		return
+	# Уворот/блок: атака полностью избегнута
+	if evasion > 0.0 and randf() < evasion:
+		evaded.emit(self)
 		return
 	hp -= dmg
 	_flash = 0.12
