@@ -6,13 +6,29 @@ extends RefCounted
 
 const STAT_ORDER := ["hp", "atk", "def", "spd", "regen"]
 
-## Реестр героев. Пока герои отличаются только именем и внешностью
-## (цвет и форма на экране) — характеристики у всех одинаковые.
-## Имена и вид временные, уточнить у гейм-директора.
-const KINDS := ["warden", "ranger"]
+## Реестр героев (классы). Отличаются внешностью и набором слотов экипировки:
+## у Рыцаря есть слот под щит, у Вора — два слота под оружие.
+## Характеристики пока одинаковые. Имена, описания и внешность временные.
+const KINDS := ["knight", "rogue"]
 const ROSTER := {
-	"warden": {"name": "Страж долины", "color": Color(0.25, 0.45, 0.9), "shape": "rect"},
-	"ranger": {"name": "Лесной следопыт", "color": Color(0.3, 0.7, 0.42), "shape": "circle"},
+	"knight": {
+		"name": "Рыцарь",
+		"color": Color(0.25, 0.45, 0.9),
+		"shape": "rect",
+		"desc": "Надёжный защитник долины. Носит щит — дополнительный слот снаряжения для защиты.",
+	},
+	"rogue": {
+		"name": "Вор",
+		"color": Color(0.5, 0.32, 0.62),
+		"shape": "triangle",
+		"desc": "Быстрый и смертоносный. Сражается двумя клинками — два слота под оружие.",
+	},
+}
+
+## Слоты экипировки по классам.
+const CLASS_SLOTS := {
+	"knight": ["weapon", "shield", "armor", "amulet", "ring1", "ring2"],
+	"rogue": ["weapon1", "weapon2", "armor", "amulet", "ring1", "ring2"],
 }
 
 # Базовые характеристики героя 1 уровня
@@ -35,15 +51,38 @@ var level := 1
 var xp := 0
 var stat_points := 0
 var allocated := {"hp": 0, "atk": 0, "def": 0, "spd": 0, "regen": 0}
-# Два слота под кольца: ring1 и ring2
-var equipment := {"weapon": null, "armor": null, "amulet": null, "ring1": null, "ring2": null}
+# Слоты экипировки зависят от класса (CLASS_SLOTS), заполняются в _init
+var equipment := {}
 var inventory := []  # массив Item
 # Текущее здоровье между волнами; < 0 — полное
 var current_hp := -1.0
-# Вид героя (ключ ROSTER); задаёт только имя и внешность
-var kind := "warden"
+# Класс героя (ключ ROSTER): внешность, описание, набор слотов
+var kind := "knight"
 # Текущая волна забега этого героя (у каждого героя свой прогресс)
 var wave := 1
+
+
+func _init(p_kind: String = "knight") -> void:
+	kind = p_kind
+	for s in CLASS_SLOTS[kind]:
+		equipment[s] = null
+
+
+## Слоты экипировки этого героя (порядок — как на экране лагеря).
+func equip_slots() -> Array:
+	return CLASS_SLOTS[kind]
+
+
+## Подходит ли предмет слоту экипировки: кольца — обоим кольцевым,
+## оружие — обоим оружейным слотам Вора.
+static func slot_accepts(equip_slot: String, item_slot: String) -> bool:
+	if equip_slot == item_slot:
+		return true
+	if (equip_slot == "ring1" or equip_slot == "ring2") and item_slot == "ring":
+		return true
+	if (equip_slot == "weapon1" or equip_slot == "weapon2") and item_slot == "weapon":
+		return true
+	return false
 
 
 ## Имя героя из реестра.
@@ -156,17 +195,26 @@ func sell_item(item: Item) -> int:
 	return xp
 
 
-## Надеть предмет из рюкзака. Кольца занимают ring1/ring2: сперва свободный
-## слот, если оба заняты — заменяет ring1. Возвращает снятый предмет (или null).
-func equip(item: Item) -> Item:
-	var slot: String = item.slot
-	if slot == "ring":
-		if equipment["ring1"] == null:
-			slot = "ring1"
-		elif equipment["ring2"] == null:
-			slot = "ring2"
-		else:
-			slot = "ring1"
+## Надеть предмет из рюкзака. Если указан target_slot (ячейка, на которую
+## бросили предмет) — надевает именно туда, заменяя её содержимое.
+## Без target_slot: первый свободный подходящий слот; если все заняты —
+## заменяет первый подходящий. Возвращает снятый предмет (или null).
+func equip(item: Item, target_slot := "") -> Item:
+	var slot := ""
+	if target_slot != "" and equipment.has(target_slot) and slot_accepts(target_slot, item.slot):
+		slot = target_slot
+	else:
+		for s in equip_slots():
+			if slot_accepts(s, item.slot) and equipment[s] == null:
+				slot = s
+				break
+		if slot == "":
+			for s in equip_slots():
+				if slot_accepts(s, item.slot):
+					slot = s
+					break
+	if slot == "":
+		return null
 	var old: Item = equipment[slot]
 	equipment[slot] = item
 	inventory.erase(item)

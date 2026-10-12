@@ -78,9 +78,9 @@ func _ready() -> void:
 func _build_hud() -> void:
 	var hud := HBoxContainer.new()
 	hud.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	hud.offset_left = 64  # слева — кнопка настроек (шестерёнка)
+	hud.offset_left = 16
 	hud.offset_top = 10
-	hud.offset_right = -16
+	hud.offset_right = -64  # справа — кнопка настроек (шестерёнка)
 	hud.add_theme_constant_override("separation", 32)
 	add_child(hud)
 
@@ -320,7 +320,7 @@ func _on_chest_clicked(chest: Chest) -> void:
 	var pos: Vector2 = chest.position
 	_chests.erase(chest)
 	chest.queue_free()
-	var item := Item.generate(_rng, -1, wave)
+	var item := Item.generate(_rng, -1, wave, [], false, hero.kind)
 	_grant_item(item, pos)
 	_update_hud()
 	_check_loot_done()
@@ -340,7 +340,7 @@ func _open_final_chest() -> void:
 	_current_choices = []
 	var taken := []
 	for i in Enemies.CHEST_CHOICES:
-		var item := Item.generate(_rng, -1, wave, taken, true)
+		var item := Item.generate(_rng, -1, wave, taken, true, hero.kind)
 		taken.append(item.name)
 		_current_choices.append(item)
 	_show_chest_ui()

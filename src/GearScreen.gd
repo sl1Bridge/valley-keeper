@@ -15,8 +15,7 @@ var wave := 1
 var wins := 0
 var message := ""
 
-const SLOT_ORDER := ["weapon", "armor", "amulet", "ring1", "ring2"]
-const SLOT_DISPLAY := {"weapon": "Оружие", "armor": "Броня", "amulet": "Амулет", "ring1": "Кольцо I", "ring2": "Кольцо II"}
+const SLOT_DISPLAY := {"weapon": "Оружие", "weapon1": "Оружие I", "weapon2": "Оружие II", "shield": "Щит", "armor": "Броня", "amulet": "Амулет", "ring1": "Кольцо I", "ring2": "Кольцо II"}
 const CELL := 64.0
 const INVENTORY_COLS := 6
 
@@ -82,11 +81,6 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	bar.add_theme_constant_override("separation", 24)
 	root.add_child(bar)
 
-	# Отступ под кнопку настроек (шестерёнка в верхнем левом углу)
-	var gear_gap := Control.new()
-	gear_gap.custom_minimum_size.x = 40
-	bar.add_child(gear_gap)
-
 	var title := Label.new()
 	title.text = "Хранитель Долины — Лагерь"
 	title.add_theme_font_size_override("font_size", 26)
@@ -109,6 +103,11 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	wins_lbl.add_theme_font_size_override("font_size", 18)
 	wins_lbl.modulate = Color(0.95, 0.85, 0.4)
 	bar.add_child(wins_lbl)
+
+	# Отступ под кнопку настроек (шестерёнка в правом верхнем углу)
+	var gear_gap := Control.new()
+	gear_gap.custom_minimum_size.x = 40
+	bar.add_child(gear_gap)
 
 
 func _build_hero_panel(columns: HBoxContainer) -> void:
@@ -191,7 +190,7 @@ func _build_equipment_panel(columns: HBoxContainer) -> void:
 	header.add_theme_font_size_override("font_size", 22)
 	box.add_child(header)
 
-	for slot in SLOT_ORDER:
+	for slot in hero.equip_slots():
 		var it: Item = hero.equipment[slot]
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
@@ -307,11 +306,10 @@ func _on_stat_plus(stat: String) -> void:
 		rebuild()
 
 
-## Подходит ли предмет ячейке экипировки (кольца — обеим ячейкам).
+## Подходит ли предмет ячейке экипировки (кольца — обеим ячейкам,
+## оружие — обоим оружейным слотам Вора).
 func _slot_matches(item: Item, slot: String) -> bool:
-	if slot == "ring1" or slot == "ring2":
-		return item.slot == "ring"
-	return item.slot == slot
+	return Hero.slot_accepts(slot, item.slot)
 
 
 ## Можно ли снять предмет в рюкзак (есть ли свободная ячейка).
@@ -320,13 +318,14 @@ func _can_unequip() -> bool:
 
 
 ## Бросок предмета на ячейку: надеть / снять / продать.
+## При надевании передаём целевую ячейку — предмет встаёт именно в неё.
 func _on_cell_drop(cell: InvCell, data: Dictionary) -> void:
 	var item: Item = data["item"]
 	if cell.is_sell:
 		var xp := hero.sell_item(item)
 		message = "Продан: %s (+%d опыта)" % [item.name, xp]
 	elif cell.slot != "":
-		hero.equip(item)
+		hero.equip(item, cell.slot)
 		message = "Надето: %s" % item.name
 	else:
 		hero.unequip(data["from"])
@@ -338,6 +337,11 @@ func _on_cell_drop(cell: InvCell, data: Dictionary) -> void:
 ## цвет — по редкости (серая и полупрозрачная — пустая ячейка).
 static func draw_slot_icon(cv: Control, slot: String, c: Vector2, s: float, color: Color) -> void:
 	match slot:
+		"shield":
+			# Баклер: круг с ободком и умбоном
+			cv.draw_circle(c, 0.42 * s, color)
+			cv.draw_circle(c, 0.28 * s, color.darkened(0.3))
+			cv.draw_circle(c, 0.1 * s, color)
 		"weapon":
 			# Клинок: лезвие, гарда, рукоять
 			cv.draw_colored_polygon(PackedVector2Array([
@@ -401,7 +405,11 @@ class InvCell:
 			GearScreen.draw_slot_icon(self, item.slot, size / 2, size.x * 0.72, item.rarity_color())
 			tooltip_text = "%s (%s)\n%s · %s" % [item.name, item.rarity_name(), item.slot_name(), item.bonuses_text()]
 		elif slot != "":
-			var base := "ring" if slot.begins_with("ring") else slot
+			var base := slot
+			if slot == "ring1" or slot == "ring2":
+				base = "ring"
+			elif slot == "weapon1" or slot == "weapon2":
+				base = "weapon"
 			GearScreen.draw_slot_icon(self, base, size / 2, size.x * 0.72, Color(1, 1, 1, 0.18))
 			tooltip_text = "Пустая ячейка: %s" % GearScreen.SLOT_DISPLAY[slot]
 		elif is_sell:

@@ -16,6 +16,7 @@ var message := ""
 var _list_buttons := {}     # kind -> Button
 var _figure: HeroFigure = null
 var _name_label: Label = null
+var _desc_label: Label = null
 var _info_label: Label = null
 var _start_btn: Button = null
 
@@ -143,6 +144,14 @@ func _build_preview(columns: HBoxContainer) -> void:
 	_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(_name_label)
 
+	_desc_label = Label.new()
+	_desc_label.add_theme_font_size_override("font_size", 17)
+	_desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_desc_label.custom_minimum_size.x = 400
+	_desc_label.modulate = Color(0.75, 0.85, 1.0)
+	box.add_child(_desc_label)
+
 	_info_label = Label.new()
 	_info_label.add_theme_font_size_override("font_size", 18)
 	_info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -197,10 +206,12 @@ func _refresh_preview() -> void:
 	_figure.queue_redraw()
 	if selected_kind == "":
 		_name_label.text = "Герой не выбран"
+		_desc_label.text = ""
 		_info_label.text = "Выбери героя из списка слева,\nпрежде чем начать забег."
 		_start_btn.disabled = true
 		return
 	_name_label.text = Hero.ROSTER[selected_kind]["name"]
+	_desc_label.text = Hero.ROSTER[selected_kind]["desc"]
 	var h: Hero = heroes.get(selected_kind)
 	if h == null:
 		_info_label.text = "Новый герой — забег ещё не начат."

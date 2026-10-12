@@ -14,7 +14,7 @@ const RARITY_COLORS := [
 	Color(0.95, 0.8, 0.3),    # легендарный — золотой
 	Color(0.9, 0.3, 0.25),    # артефакт — красный
 ]
-const SLOT_NAMES := {"weapon": "Оружие", "armor": "Броня", "amulet": "Амулет", "ring": "Кольцо"}
+const SLOT_NAMES := {"weapon": "Оружие", "shield": "Щит", "armor": "Броня", "amulet": "Амулет", "ring": "Кольцо"}
 const STAT_NAMES := {"hp": "Здоровье", "atk": "Сила атаки", "def": "Защита", "spd": "Скорость атаки", "regen": "Регенерация"}
 const STAT_ORDER := ["hp", "atk", "def", "spd", "regen"]
 
@@ -28,12 +28,15 @@ const RARITY_WAVE_SHIFT := 0.09
 # Дополнительный сдвиг для финального сундука волны
 const RARITY_RICH_SHIFT := 0.8
 
-# Шаблоны предметов (~11 штук по ТЗ): имя, слот, базовые бонусы (для обычной редкости)
+# Шаблоны предметов: имя, слот, базовые бонусы (для обычной редкости).
+# Поле "class" — классовый предмет: выпадает только герою этого класса.
 const TEMPLATES := [
 	{"name": "Ржавый меч", "slot": "weapon", "bonuses": {"atk": 3}},
 	{"name": "Топор лесника", "slot": "weapon", "bonuses": {"atk": 2, "hp": 4}},
 	{"name": "Кинжал странника", "slot": "weapon", "bonuses": {"atk": 2, "spd": 0.15}},
 	{"name": "Молот кузнеца", "slot": "weapon", "bonuses": {"atk": 4, "spd": -0.1}},
+	{"name": "Щит ополченца", "slot": "shield", "bonuses": {"def": 2, "hp": 3}, "class": "knight"},
+	{"name": "Башенный щит", "slot": "shield", "bonuses": {"def": 3, "spd": -0.05}, "class": "knight"},
 	{"name": "Кожаная куртка", "slot": "armor", "bonuses": {"def": 1, "hp": 4}},
 	{"name": "Кольчуга", "slot": "armor", "bonuses": {"def": 2}},
 	{"name": "Плащ тени", "slot": "armor", "bonuses": {"def": 1, "spd": 0.1}},
@@ -83,7 +86,9 @@ static func roll_rarity(rng: RandomNumberGenerator, wave: int = 1, rich: bool = 
 ## Генерация случайного предмета. rarity = -1 — бросить жребий по весам волны.
 ## exclude_names — шаблоны с такими именами не выпадут (для сундука «3 на выбор»).
 ## rich — финальный сундук волны: шансы редкости выше.
-static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, wave: int = 1, exclude_names: Array = [], rich: bool = false) -> Item:
+## hero_kind — класс героя: классовые предметы (поле "class" в шаблоне)
+## выпадают только своему классу (щиты — только Рыцарю).
+static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, wave: int = 1, exclude_names: Array = [], rich: bool = false, hero_kind: String = "") -> Item:
 	if rng == null:
 		rng = RandomNumberGenerator.new()
 		rng.randomize()
@@ -91,8 +96,11 @@ static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, wave: 
 		rarity = roll_rarity(rng, wave, rich)
 	var candidates := []
 	for t in TEMPLATES:
-		if not exclude_names.has(t["name"]):
-			candidates.append(t)
+		if exclude_names.has(t["name"]):
+			continue
+		if t.get("class", "") != "" and t["class"] != hero_kind:
+			continue
+		candidates.append(t)
 	var t: Dictionary = candidates[rng.randi_range(0, candidates.size() - 1)]
 	var mult: float = RARITY_MULT[rarity]
 	var it := Item.new()

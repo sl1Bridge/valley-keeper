@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_items()
 	_test_hero()
 	_test_heroes_roster()
+	_test_class_slots()
 	_test_settings()
 	_test_rings_and_regen()
 	_test_inventory()
@@ -41,7 +42,7 @@ func _process(_delta: float) -> bool:
 			var main := root.get_node("Main")
 			_check(main._screen is MainMenu, "стартовый экран — главное меню")
 			_check(main._screen._start_btn.disabled, "без выбора героя забег начать нельзя")
-			main._on_menu_start("warden")
+			main._on_menu_start("knight")
 			_phase = 3
 			_frames = 0
 		return false
@@ -60,7 +61,7 @@ func _process(_delta: float) -> bool:
 			var main := root.get_node("Main")
 			_check(main._screen is BattleScreen, "Main переключился на экран боя")
 			var actor_col: Color = (main._screen as BattleScreen)._hero_actor.body_color
-			_check(actor_col == Hero.ROSTER["warden"]["color"], "на поле боя — внешность выбранного героя")
+			_check(actor_col == Hero.ROSTER["knight"]["color"], "на поле боя — внешность выбранного героя")
 			_test_victory_flow(main)
 			return _finish()
 		return false
@@ -78,8 +79,8 @@ func _test_victory_flow(main) -> void:
 	if btn != null:
 		btn.pressed.emit()
 	_check(main._screen is MainMenu, "после победы игрок попадает в главное меню")
-	main._on_menu_start("ranger")
-	_check(main.hero.kind == "ranger", "выбран второй герой")
+	main._on_menu_start("rogue")
+	_check(main.hero.kind == "rogue", "выбран второй герой")
 	_check(main.heroes.size() == 2, "у каждого героя свой сохранённый прогресс")
 	_check(main.hero.wave == 1, "забег второго героя начинается с 1-й волны")
 	_check(main._screen is GearScreen, "после выбора второго героя — лагерь")
@@ -217,6 +218,58 @@ func _test_settings() -> void:
 	_check(AudioServer.get_bus_index("SFX") != -1, "звуковая шина SFX создана")
 
 
+func _test_class_slots() -> void:
+	print("-- Классы: слоты, два оружия Вора, классовые предметы --")
+	var k := Hero.new("knight")
+	_check(k.equip_slots().has("shield"), "у Рыцаря есть слот под щит")
+	var r := Hero.new("rogue")
+	_check(r.equip_slots().has("weapon1") and r.equip_slots().has("weapon2"), "у Вора два слота под оружие")
+	_check(not r.equip_slots().has("shield") and not r.equip_slots().has("weapon"), "у Вора нет щита и единого слота оружия")
+
+	# Вор носит два оружия; бросок на конкретный слот заменяет именно его
+	var mk := func(p_name: String) -> Item:
+		var it := Item.new()
+		it.name = p_name
+		it.slot = "weapon"
+		it.rarity = 0
+		it.bonuses = {"atk": 1}
+		return it
+	var w1: Item = mk.call("Клинок 1")
+	var w2: Item = mk.call("Клинок 2")
+	var w3: Item = mk.call("Клинок 3")
+	r.inventory.append(w1)
+	r.equip(w1)
+	r.inventory.append(w2)
+	r.equip(w2)
+	_check(r.equipment["weapon1"] == w1 and r.equipment["weapon2"] == w2, "Вор надел два оружия")
+	r.inventory.append(w3)
+	var old := r.equip(w3, "weapon2")
+	_check(r.equipment["weapon2"] == w3 and r.equipment["weapon1"] == w1, "бросок на Оружие II заменил именно его")
+	_check(old == w2 and r.inventory.has(w2), "снятый клинок вернулся в рюкзак")
+	_check(int(r.get_stats()["atk"]) == int(Hero.BASE["atk"]) + 2, "бонусы двух оружий складываются")
+
+	# Совместимость слотов
+	_check(Hero.slot_accepts("shield", "shield"), "щит встаёт в слот щита")
+	_check(not Hero.slot_accepts("weapon1", "shield"), "щит не встаёт в слот оружия")
+	_check(Hero.slot_accepts("weapon2", "weapon"), "оружие встаёт в Оружие II")
+	_check(not Hero.slot_accepts("armor", "weapon"), "оружие не встаёт в броню")
+
+	# Классовые предметы: щиты выпадают только Рыцарю
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var rogue_saw_shield := false
+	for i in 300:
+		if Item.generate(rng, -1, 5, [], false, "rogue").slot == "shield":
+			rogue_saw_shield = true
+	_check(not rogue_saw_shield, "Вору щит не выпадает никогда (300 генераций)")
+	rng.seed = 77
+	var knight_saw_shield := false
+	for i in 300:
+		if Item.generate(rng, -1, 5, [], false, "knight").slot == "shield":
+			knight_saw_shield = true
+	_check(knight_saw_shield, "Рыцарю щиты выпадают")
+
+
 func _make_ring(p_name: String) -> Item:
 	var r := Item.new()
 	r.name = p_name
@@ -244,6 +297,13 @@ func _test_rings_and_regen() -> void:
 	var replaced := h.equip(r3)
 	_check(h.equipment["ring1"] == r3 and h.equipment["ring2"] == r2, "третье кольцо вытеснило первое")
 	_check(replaced == r1 and h.inventory.has(r1), "вытесненное кольцо вернулось в рюкзак")
+
+	# Бросок кольца на конкретный слот заменяет именно его, а не первый
+	var r4 := _make_ring("Кольцо 4")
+	h.inventory.append(r4)
+	var old2 := h.equip(r4, "ring2")
+	_check(h.equipment["ring2"] == r4 and h.equipment["ring1"] == r3, "бросок на Кольцо II заменил именно его")
+	_check(old2 == r2 and h.inventory.has(r2), "снятое с Кольца II вернулось в рюкзак")
 
 	# Регенерация: вложение очков и бонус предмета
 	h.add_xp(10)

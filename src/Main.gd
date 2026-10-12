@@ -46,9 +46,7 @@ func _on_menu_start(kind: String) -> void:
 	selected_kind = kind
 	var is_new := not heroes.has(kind)
 	if is_new:
-		var h := Hero.new()
-		h.kind = kind
-		heroes[kind] = h
+		heroes[kind] = Hero.new(kind)
 	hero = heroes[kind]
 	if is_new:
 		show_gear("Добро пожаловать в долину! Собери героя и жми «В путь».")
@@ -168,7 +166,8 @@ func _build_settings_button() -> void:
 	_settings_layer.layer = 10
 	add_child(_settings_layer)
 	var btn := Settings.GearButton.new()
-	btn.position = Vector2(12, 10)
+	btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	btn.position = Vector2(-52, 10)
 	btn.pressed.connect(_on_settings_pressed)
 	_settings_layer.add_child(btn)
 
