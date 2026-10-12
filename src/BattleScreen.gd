@@ -80,7 +80,7 @@ func _build_hud() -> void:
 	hud.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	hud.offset_left = 16
 	hud.offset_top = 10
-	hud.offset_right = -64  # справа — кнопка настроек (шестерёнка)
+	hud.offset_right = -112  # справа — кнопки сдачи (флаг) и настроек (шестерёнка)
 	hud.add_theme_constant_override("separation", 32)
 	add_child(hud)
 
@@ -136,10 +136,11 @@ func _spawn_hero() -> void:
 
 
 ## Боевые характеристики героя: сырые очки превращаем в реальные значения
-## (атак/с, % защиты, HP/с регенерации, шанс уворота/блока).
+## (здоровье из Выживаемости, атак/с из Ловкости, % защиты, шанс уворота/блока).
 func _hero_battle_stats() -> Dictionary:
 	var stats := hero.get_stats()
 	var eff := Hero.effective(stats)
+	stats["hp"] = eff["max_hp"]
 	stats["spd"] = eff["aps"]
 	_apply_hero_effects(_hero_actor, eff)
 	return stats

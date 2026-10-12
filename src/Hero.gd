@@ -4,7 +4,11 @@ extends RefCounted
 ## Данные героя: характеристики, уровень, опыт, экипировка, рюкзак, прогресс забега.
 ## Никакой визуальной логики — только числа и правила.
 
-const STAT_ORDER := ["hp", "atk", "def", "spd", "regen"]
+## Базовые характеристики (качаются очками за уровень):
+## Сила (урон), Ловкость (темп атаки), Защита (%), Выживаемость (здоровье и регенерация).
+## Здоровье и регенерация — не отдельные характеристики: обе выводятся
+## из Выживаемости по формуле затухания (Hero.effective).
+const STAT_ORDER := ["atk", "spd", "def", "surv"]
 
 ## Классовая характеристика: есть только у своего класса.
 ## Очками за уровень не качается — растёт только от предметов.
@@ -35,20 +39,22 @@ const CLASS_SLOTS := {
 	"rogue": ["weapon1", "weapon2", "armor", "amulet", "ring1", "ring2"],
 }
 
-# Базовые характеристики героя 1 уровня (сырые очки; скорость и регенерация — с нуля)
-const BASE := {"hp": 30, "atk": 5, "def": 1, "spd": 0.0, "regen": 0.0}
+# Базовые характеристики героя 1 уровня (сырые очки; ловкость — с нуля)
+const BASE := {"atk": 5, "def": 1, "spd": 0.0, "surv": 8.0}
 # Прирост за 1 очко характеристики
-const PER_POINT := {"hp": 8, "atk": 2, "def": 1, "spd": 1.0, "regen": 1.0}
+const PER_POINT := {"atk": 2, "def": 1, "spd": 1.0, "surv": 2.0}
 # Очков характеристик за уровень
 const POINTS_PER_LEVEL := 1
 
 ## Формула затухания: cap × raw / (raw + K). Чем больше сырых очков,
 ## тем меньше прирост от следующего очка. Константы временные, уточнить по игротестам.
 const DEF_K := 15.0    # защита: def/(def+15) — доля снижения урона (асимптота 100%)
-const SPD_CAP := 2.0   # скорость атаки: до +200% к темпу (максимум 3 уд/с)
+const SPD_CAP := 2.0   # ловкость: до +200% к темпу атаки (максимум 3 уд/с)
 const SPD_K := 10.0
-const REGEN_CAP := 8.0  # регенерация: до 8 HP/с
-const REGEN_K := 12.0
+const SURV_HP_CAP := 140.0  # выживаемость → макс. здоровье: до 140 HP
+const SURV_HP_K := 30.0     # выживаемость 8 → ~30 HP, 30 → 70 HP
+const REGEN_CAP := 8.0  # выживаемость → регенерация: до 8 HP/с
+const REGEN_K := 80.0
 const CLASS_CAP := 0.6  # уворот/блок: до 60%
 const CLASS_K := 15.0
 # Фиксированное восстановление здоровья за передышку между волнами
@@ -64,7 +70,7 @@ const SELL_XP := [2, 4, 7, 12, 20, 35]
 var level := 1
 var xp := 0
 var stat_points := 0
-var allocated := {"hp": 0, "atk": 0, "def": 0, "spd": 0, "regen": 0}
+var allocated := {"atk": 0, "def": 0, "spd": 0, "surv": 0}
 # Слоты экипировки зависят от класса (CLASS_SLOTS), заполняются в _init
 var equipment := {}
 var inventory := []  # массив Item
@@ -127,7 +133,6 @@ func get_stats() -> Dictionary:
 		if it != null:
 			for k in it.bonuses:
 				s[k] = s.get(k, 0.0) + it.bonuses[k]
-	s["hp"] = maxf(1.0, s["hp"])
 	return s
 
 
@@ -138,13 +143,16 @@ static func diminish(raw: float, cap: float, k: float) -> float:
 
 ## Реальные боевые значения из сырых очков:
 ## def_pct — доля снижения урона, aps — атак в секунду,
-## regen_hp — HP/с, class_pct — шанс уворота/блока.
+## max_hp и regen_hp — здоровье и регенерация из Выживаемости,
+## class_pct — шанс уворота/блока.
 static func effective(stats: Dictionary) -> Dictionary:
 	var e := {}
 	e["def_pct"] = diminish(maxf(0.0, stats.get("def", 0.0)), 1.0, DEF_K)
 	var spd_raw: float = maxf(stats.get("spd", 0.0), -SPD_K + 1.0)
 	e["aps"] = maxf(0.2, 1.0 + diminish(spd_raw, SPD_CAP, SPD_K))
-	e["regen_hp"] = diminish(maxf(0.0, stats.get("regen", 0.0)), REGEN_CAP, REGEN_K)
+	var surv_raw: float = maxf(0.0, stats.get("surv", 0.0))
+	e["max_hp"] = diminish(surv_raw, SURV_HP_CAP, SURV_HP_K)
+	e["regen_hp"] = diminish(surv_raw, REGEN_CAP, REGEN_K)
 	var class_raw: float = maxf(0.0, stats.get("dodge", stats.get("block", 0.0)))
 	e["class_pct"] = diminish(class_raw, CLASS_CAP, CLASS_K)
 	return e
@@ -181,9 +189,9 @@ func allocate(stat: String) -> bool:
 	return true
 
 
-## Максимальное здоровье по текущим характеристикам.
+## Максимальное здоровье: выводится из Выживаемости по формуле затухания.
 func max_hp() -> float:
-	return get_stats()["hp"]
+	return maxf(1.0, effective(get_stats())["max_hp"])
 
 
 ## Здоровье, с которым герой входит в бой.

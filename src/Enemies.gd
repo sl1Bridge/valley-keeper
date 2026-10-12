@@ -52,7 +52,8 @@ static func wave_composition(wave: int, rng: RandomNumberGenerator = null) -> Ar
 	for k in weights:
 		total += weights[k]
 	var list := []
-	var n: int = mini(2 + wave, MAX_ENEMIES)
+	# Размер волны растёт медленно: +1 враг каждые две волны (волна 1 — 2 врага)
+	var n: int = mini(2 + wave / 2, MAX_ENEMIES)
 	for i in n:
 		var r := rng.randf() * total
 		var acc := 0.0
@@ -64,14 +65,15 @@ static func wave_composition(wave: int, rng: RandomNumberGenerator = null) -> Ar
 	return list
 
 
-## Характеристики врага с учётом волны.
+## Характеристики врага с учётом волны. Рост +6% за волну (замедлено:
+## прогрессия героя стала медленнее — 1 очко за уровень).
 static func scaled(type: String, wave: int) -> Dictionary:
 	var base: Dictionary = TYPES[type].duplicate()
-	var f := 1.0 + 0.1 * (wave - 1)
+	var f := 1.0 + 0.06 * (wave - 1)
 	base["hp"] = maxi(1, roundi(base["hp"] * f))
 	base["atk"] = maxi(1, roundi(base["atk"] * f))
-	base["def"] = roundi(base["def"] * (1.0 + 0.1 * (wave - 1)))
-	base["xp"] = maxi(1, roundi(base["xp"] * (1.0 + 0.1 * (wave - 1))))
+	base["def"] = roundi(base["def"] * (1.0 + 0.06 * (wave - 1)))
+	base["xp"] = maxi(1, roundi(base["xp"] * (1.0 + 0.06 * (wave - 1))))
 	base["type"] = type
 	return base
 

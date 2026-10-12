@@ -63,10 +63,57 @@ func _process(_delta: float) -> bool:
 			_check(main._screen is BattleScreen, "Main переключился на экран боя")
 			var actor_col: Color = (main._screen as BattleScreen)._hero_actor.body_color
 			_check(actor_col == Hero.ROSTER["knight"]["color"], "на поле боя — внешность выбранного героя")
+			_test_surrender_flow(main)
 			_test_victory_flow(main)
 			return _finish()
 		return false
 	return false
+
+
+## Сдача забега: кнопка-флаг, окно подтверждения, пауза боя при модальных окнах.
+func _test_surrender_flow(main) -> void:
+	print("-- Сдача забега и пауза боя --")
+	_check(main._surrender_btn.visible, "кнопка сдачи видна на экране боя")
+
+	# Настройки во время боя ставят бой на паузу
+	main._on_settings_pressed()
+	_check(paused, "бой на паузе, пока открыты настройки")
+	var win := _find_modal(main, "settings")
+	_check(win != null, "окно настроек открылось")
+	if win != null:
+		win._on_close()
+	_check(not paused, "закрытие настроек снимает паузу")
+
+	# Окно сдачи: пауза, отмена возвращает в бой
+	main._on_surrender_pressed()
+	_check(paused, "бой на паузе, пока открыто окно сдачи")
+	var dlg := _find_modal(main, "surrender")
+	_check(dlg != null, "окно подтверждения сдачи открылось")
+	if dlg != null:
+		dlg._on_cancel()
+	_check(not paused, "отмена сдачи снимает паузу")
+	_check(main._screen is BattleScreen, "после отмены мы всё ещё в бою")
+
+	# Подтверждение: забег завершён, возврат в главное меню
+	main._on_surrender_pressed()
+	var dlg2 := _find_modal(main, "surrender")
+	if dlg2 != null:
+		dlg2._on_confirm()
+	_check(main._screen is MainMenu, "после подтверждения сдачи — главное меню")
+	_check(main.hero == null, "герой забега сброшен")
+	_check(not paused, "пауза снята после сдачи")
+	_check(not main._surrender_btn.visible, "в главном меню кнопка сдачи скрыта")
+	_check(Engine.time_scale == 1.0, "скорость боя сброшена после ухода с экрана боя")
+
+
+## Найти открытое модальное окно в оверлей-слое Main.
+func _find_modal(main, what: String) -> Control:
+	for c in main._settings_layer.get_children():
+		if what == "settings" and c is Settings.SettingsWindow:
+			return c
+		if what == "surrender" and c is GameMain.SurrenderDialog:
+			return c
+	return null
 
 
 ## Победа над боссом → главное меню; новый забег всегда начинается с нуля.
@@ -83,6 +130,7 @@ func _test_victory_flow(main) -> void:
 	_check(main.hero.level == 1 and main.hero.wave == 1, "новый забег — с нуля (уровень 1, волна 1)")
 	_check(main.hero.inventory.is_empty(), "прогресс между забегами не сохраняется (рюкзак пуст)")
 	_check(main._screen is GearScreen, "после выбора героя — лагерь")
+	_check(main._surrender_btn.visible, "кнопка сдачи видна в лагере")
 
 
 func _find_button(node: Node) -> Button:
@@ -160,7 +208,9 @@ func _test_hero() -> void:
 	print("-- Герой: характеристики, опыт, экипировка --")
 	var h := Hero.new()
 	var s := h.get_stats()
-	_check(int(s["hp"]) == 30 and int(s["atk"]) == 5, "базовые характеристики")
+	_check(int(s["atk"]) == 5 and int(s["surv"]) == int(Hero.BASE["surv"]), "базовые характеристики (сила, выживаемость)")
+	_check(not s.has("hp") and not s.has("regen"), "здоровье и регенерация — не характеристики, а производные Выживаемости")
+	_check(h.max_hp() > 25.0 and h.max_hp() < 35.0, "стартовое здоровье около 30 (%d)" % int(h.max_hp()))
 	_check(not h.allocate("atk"), "нельзя вложить очко без очков")
 
 	var levels := h.add_xp(10)
@@ -298,23 +348,38 @@ func _test_class_slots() -> void:
 
 
 func _test_diminishing() -> void:
-	print("-- Формулы затухания: защита %, скорость, регенерация, уворот/блок --")
-	var e0 := Hero.effective({"def": 0, "spd": 0, "regen": 0})
+	print("-- Формулы затухания: защита %, ловкость, выживаемость, уворот/блок --")
+	# Отображаемые названия: Сила, Ловкость, Выживаемость
+	_check(Item.STAT_NAMES["atk"] == "Сила", "атака переименована в Силу")
+	_check(Item.STAT_NAMES["spd"] == "Ловкость", "скорость атаки переименована в Ловкость")
+	_check(Item.STAT_NAMES["surv"] == "Выживаемость", "здоровье и регенерация скрыты за Выживаемостью")
+
+	var e0 := Hero.effective({"def": 0, "spd": 0, "surv": 0})
 	_check(absf(e0["def_pct"]) < 0.001, "без защиты снижение урона 0%")
-	var e15 := Hero.effective({"def": 15, "spd": 0, "regen": 0})
+	var e15 := Hero.effective({"def": 15, "spd": 0, "surv": 0})
 	_check(absf(e15["def_pct"] - 0.5) < 0.001, "защита 15 → снижение 50%")
-	var e30 := Hero.effective({"def": 30, "spd": 0, "regen": 0})
+	var e30 := Hero.effective({"def": 30, "spd": 0, "surv": 0})
 	_check(e30["def_pct"] > e15["def_pct"] and e30["def_pct"] < 0.7, "защита 30 → меньше 70%")
 	var inc1: float = e15["def_pct"] - e0["def_pct"]
 	var inc2: float = e30["def_pct"] - e15["def_pct"]
 	_check(inc2 < inc1, "прирост защиты затухает: вторые +15 дают меньше первых")
 
-	_check(absf(e0["aps"] - 1.0) < 0.001, "без очков скорости — базовый темп 1.00 уд/с")
-	var s10 := Hero.effective({"spd": 10, "def": 0, "regen": 0})
-	_check(absf(s10["aps"] - 2.0) < 0.001, "скорость 10 → 2.00 уд/с")
+	_check(absf(e0["aps"] - 1.0) < 0.001, "без очков ловкости — базовый темп 1.00 уд/с")
+	var s10 := Hero.effective({"spd": 10, "def": 0, "surv": 0})
+	_check(absf(s10["aps"] - 2.0) < 0.001, "ловкость 10 → 2.00 уд/с")
 	_check(s10["aps"] < 1.0 + Hero.SPD_CAP, "темп ниже максимума формулы")
-	var r12 := Hero.effective({"regen": 12, "def": 0, "spd": 0})
-	_check(absf(r12["regen_hp"] - 4.0) < 0.001, "регенерация 12 → 4 HP/с")
+
+	# Выживаемость: здоровье и регенерация с затуханием
+	_check(absf(e0["max_hp"]) < 0.001 and absf(e0["regen_hp"]) < 0.001, "без выживаемости нет ни здоровья, ни регенерации")
+	var v30 := Hero.effective({"surv": 30, "def": 0, "spd": 0})
+	_check(absf(v30["max_hp"] - 70.0) < 0.001, "выживаемость 30 → 70 HP")
+	var v80 := Hero.effective({"surv": 80, "def": 0, "spd": 0})
+	_check(absf(v80["regen_hp"] - 4.0) < 0.001, "выживаемость 80 → регенерация 4 HP/с")
+	var v15 := Hero.effective({"surv": 15, "def": 0, "spd": 0})
+	var hp_inc1: float = v15["max_hp"] - e0["max_hp"]
+	var hp_inc2: float = v30["max_hp"] - v15["max_hp"]
+	_check(hp_inc2 < hp_inc1, "прирост здоровья от выживаемости затухает")
+
 	var d15 := Hero.effective({"dodge": 15})
 	_check(absf(d15["class_pct"] - 0.3) < 0.001, "уворот 15 → шанс 30%")
 
@@ -339,6 +404,7 @@ func _test_diminishing() -> void:
 	var rr := Hero.new("rogue")
 	rr.stat_points = 3
 	_check(not rr.allocate("dodge"), "уворот нельзя качать очками — только предметы")
+	_check(rr.allocate("surv"), "выживаемость качается очками (базовая характеристика)")
 	var kk := Hero.new("knight")
 	kk.stat_points = 3
 	_check(not kk.allocate("block"), "блок нельзя качать очками — только предметы")
@@ -350,7 +416,7 @@ func _make_ring(p_name: String) -> Item:
 	r.name = p_name
 	r.slot = "ring"
 	r.rarity = 0
-	r.bonuses = {"hp": 5}
+	r.bonuses = {"surv": 2}
 	return r
 
 
@@ -380,18 +446,20 @@ func _test_rings_and_regen() -> void:
 	_check(h.equipment["ring2"] == r4 and h.equipment["ring1"] == r3, "бросок на Кольцо II заменил именно его")
 	_check(old2 == r2 and h.inventory.has(r2), "снятое с Кольца II вернулось в рюкзак")
 
-	# Регенерация: вложение очков и бонус предмета
-	h.add_xp(10)
-	h.allocate("regen")
-	var regen_ring := Item.new()
-	regen_ring.name = "Кольцо регенерации"
-	regen_ring.slot = "ring"
-	regen_ring.rarity = 0
-	regen_ring.bonuses = {"regen": 3}
-	h.inventory.append(regen_ring)
-	h.equip(regen_ring)
-	var expected := Hero.PER_POINT["regen"] + 3.0
-	_check(absf(h.get_stats()["regen"] - expected) < 0.001, "регенерация = очко + кольцо (%.0f очков)" % expected)
+	# Выживаемость: вложение очков и бонус предмета складываются (чистый герой)
+	var h2 := Hero.new()
+	var surv_base: float = h2.get_stats()["surv"]
+	h2.add_xp(10)
+	h2.allocate("surv")
+	var surv_ring := Item.new()
+	surv_ring.name = "Кольцо стойкости"
+	surv_ring.slot = "ring"
+	surv_ring.rarity = 0
+	surv_ring.bonuses = {"surv": 3}
+	h2.inventory.append(surv_ring)
+	h2.equip(surv_ring)
+	var expected: float = surv_base + Hero.PER_POINT["surv"] + 3.0
+	_check(absf(h2.get_stats()["surv"] - expected) < 0.001, "выживаемость = база + очко + кольцо (%.0f очков)" % expected)
 
 	# Регенерация работает в бою
 	var a := Actor.new()
@@ -459,7 +527,8 @@ func _test_inventory() -> void:
 func _test_enemies() -> void:
 	print("-- Враги и волны --")
 	var comp1 := Enemies.wave_composition(1)
-	_check(comp1.size() == 3 and comp1.all(func(t): return t == "slime"), "волна 1 — три слизня")
+	_check(comp1.size() == 2 and comp1.all(func(t): return t == "slime"), "волна 1 — два слизня")
+	_check(Enemies.wave_composition(2).size() == 3, "волна 2 — три врага (размер растёт каждые две волны)")
 	_check(Enemies.wave_composition(Enemies.TOTAL_WAVES) == ["boss"], "волна %d — босс" % Enemies.TOTAL_WAVES)
 	_check(Enemies.TOTAL_WAVES == 20, "в локации 20 волн")
 
@@ -621,7 +690,7 @@ func _test_boss_sims() -> void:
 	var strong := Hero.new()
 	strong.add_xp(600)
 	while strong.stat_points > 0:
-		strong.allocate("hp")
+		strong.allocate("surv")
 		if strong.stat_points > 0:
 			strong.allocate("atk")
 	for slot in ["weapon", "armor", "amulet"]:
@@ -629,7 +698,7 @@ func _test_boss_sims() -> void:
 		it.name = "Легенда"
 		it.slot = slot
 		it.rarity = 4
-		it.bonuses = {"atk": 8, "hp": 20, "def": 4}
+		it.bonuses = {"atk": 8, "surv": 10, "def": 4}
 		strong.inventory.append(it)
 		strong.equip(it)
 	var b1 := _run_battle(strong, Enemies.TOTAL_WAVES)

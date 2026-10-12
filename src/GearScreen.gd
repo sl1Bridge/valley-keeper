@@ -97,9 +97,9 @@ func _build_top_bar(root: VBoxContainer) -> void:
 	wave_lbl.add_theme_font_size_override("font_size", 18)
 	bar.add_child(wave_lbl)
 
-	# Отступ под кнопку настроек (шестерёнка в правом верхнем углу)
+	# Отступ под кнопки в правом верхнем углу (флаг сдачи + шестерёнка)
 	var gear_gap := Control.new()
-	gear_gap.custom_minimum_size.x = 40
+	gear_gap.custom_minimum_size.x = 88
 	bar.add_child(gear_gap)
 
 
@@ -171,15 +171,18 @@ func _build_hero_panel(columns: HBoxContainer) -> void:
 			row.add_child(plus)
 
 
-## Подсказка при наведении на характеристику: реальное боевое значение.
-func _stat_tooltip(key: String, _stats: Dictionary, eff: Dictionary) -> String:
+## Подсказка при наведении на характеристику: реальное боевое значение
+## и чем характеристика управляет.
+func _stat_tooltip(key: String, stats: Dictionary, eff: Dictionary) -> String:
 	match key:
-		"def":
-			return "Реальное снижение входящего урона: %d%%" % roundi(eff["def_pct"] * 100.0)
+		"atk":
+			return "Урон за удар (до защиты цели): %d\nОт Силы зависит урон, наносимый героем" % int(stats.get("atk", 0))
 		"spd":
-			return "Реальный темп атаки: %.2f уд/с (база — 1.00)" % eff["aps"]
-		"regen":
-			return "Реальная регенерация: %.1f HP/с" % eff["regen_hp"]
+			return "Скорость атаки: %.2f уд/с (база — 1.00)\nОт Ловкости зависит скорость атаки героя" % eff["aps"]
+		"def":
+			return "Снижение входящего урона: %d%%" % roundi(eff["def_pct"] * 100.0)
+		"surv":
+			return "Макс. здоровье: %d\nРегенерация: %.1f HP/с\nОт Выживаемости зависят здоровье и регенерация" % [int(eff["max_hp"]), eff["regen_hp"]]
 		"dodge", "block":
 			return "Реальный шанс: %d%%\nОчками не качается — растёт только от предметов" % roundi(eff["class_pct"] * 100.0)
 	return ""
