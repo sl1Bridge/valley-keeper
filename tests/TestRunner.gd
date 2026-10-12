@@ -758,6 +758,16 @@ func _test_enemy_tooltip() -> void:
 		if not found:
 			ok = false
 	_check(ok, "у каждого врага на поле есть подсказка при наведении")
+
+	# После гибели врага его зоны наведения перестают принимать мышь —
+	# иначе они перекрывают клики по сундуку, упавшему на место врага
+	var e0: Actor = b._enemies[0]
+	b._on_enemy_died(e0)
+	var all_ignore := true
+	for c in e0.get_children():
+		if c is Control and c.mouse_filter != Control.MOUSE_FILTER_IGNORE:
+			all_ignore = false
+	_check(all_ignore, "зона наведения мёртвого врага не перехватывает клики (сундук под ним доступен)")
 	b.free()
 
 

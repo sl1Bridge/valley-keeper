@@ -266,6 +266,12 @@ func step(_delta: float) -> void:
 
 func _on_enemy_died(e: Actor) -> void:
 	_kills += 1
+	# Мёртвый враг не должен перехватывать мышь: на его место падает сундук,
+	# а Control перекрывает клики по Area2D даже с mouse_filter PASS
+	# (известное поведение движка, godotengine/godot#54529).
+	for c in e.get_children():
+		if c is Control:
+			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var is_boss: bool = e.stats.get("type", "") == "boss"
 
 	# Опыт и уровни
