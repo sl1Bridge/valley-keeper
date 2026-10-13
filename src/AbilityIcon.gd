@@ -72,7 +72,8 @@ func _draw() -> void:
 	var ready := fill >= 1.0
 	var base := icon_color if ready else Color(0.55, 0.56, 0.6)
 	draw_glyph(self, ability, size / 2.0, size.x * 0.72, base)
-	draw_rect(r, icon_color if ready else Color(0.3, 0.33, 0.4), false, 2.0)
+	# Рамка заливается цветом вместе с иконкой: серая → цветная по мере заряда
+	draw_rect(r, Color(0.3, 0.33, 0.4).lerp(icon_color, fill), false, 2.0)
 
 
 ## Символ способности: рупор для «Рёва», кинжал остриём вниз для

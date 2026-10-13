@@ -79,6 +79,10 @@ func _ready() -> void:
 	else:
 		_rng.randomize()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Сам экран клики не обрабатывает: полноразмерный Control со штатным
+	# mouse_filter перехватывал бы мышь и не давал открывать сундуки
+	# (Area2D под ним) — та же особенность движка, что с зонами наведения
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Родитель — Main (Node, не Control): якоря не задают размер сами
 	# (та же особенность, что у модальных окон, — см. Main.SurrenderDialog).
 	# Без явного размера всё, привязанное к низу экрана (иконка способности),
@@ -99,6 +103,8 @@ func _ready() -> void:
 
 func _build_hud() -> void:
 	var hud := HBoxContainer.new()
+	# Сама полоса клики не ест (иначе перекрыла бы поле боя) — кнопки внутри работают сами
+	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	hud.offset_left = 16
 	hud.offset_top = 10
@@ -219,9 +225,16 @@ func _spawn_enemies() -> void:
 	var comp := Enemies.wave_composition(wave, _rng)
 	_enemy_total = comp.size()
 	var formation: Array = FORMATIONS[mini(comp.size(), Enemies.MAX_ENEMIES)]
+	# Верхняя кромка поля боя (Backdrop.FIELD_TOP): у многочисленных строев
+	# верхние ряды вылезали на задний фон — прижимаем их к полю
+	var view_h := 720.0  # окно по умолчанию 1280×720; в дереве — реальный размер
+	if is_inside_tree():
+		view_h = get_viewport_rect().size.y
+	var min_y := view_h * Backdrop.FIELD_TOP + 20.0
 	for i in comp.size():
 		var type: String = comp[i]
 		var pos: Vector2 = BOSS_POS if type == "boss" else FORMATION_ANCHOR + formation[i]
+		pos.y = maxf(pos.y, min_y)
 		_add_enemy(type, pos, false)
 	_pick_hero_target()
 

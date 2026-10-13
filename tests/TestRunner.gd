@@ -26,6 +26,7 @@ func _initialize() -> void:
 	_test_enemy_tooltip()
 	_test_summon_taunt()
 	_test_hero_abilities()
+	_test_battle_layout()
 	_test_attack_jitter()
 	_test_chests_heal_speed()
 	_test_battle_sim()
@@ -1036,6 +1037,38 @@ func _test_hero_abilities() -> void:
 	b2._hero_actor._attack()
 	_check(absf(enemy.hp - (hp1 - floorf(atk))) < 0.01, "следующий удар — обычный урон")
 	b2.free()
+
+
+func _test_battle_layout() -> void:
+	print("-- Раскладка боя: клики по сундукам, строй на поле --")
+	# Экран боя не должен перехватывать клики мыши: полноразмерный Control
+	# над полем боя не дал бы открывать сундуки (Area2D под ним)
+	var b := BattleScreen.new()
+	b.hero = Hero.new("knight")
+	b.wave = 1
+	b._ready()
+	_check(b.mouse_filter == Control.MOUSE_FILTER_IGNORE, "экран боя не перехватывает мышь — сундуки кликаются")
+	b.free()
+
+	# Строй не уходит на задний фон: ноги врагов не выше верхней кромки поля
+	# (вне дерева — окно по умолчанию 1280×720)
+	var min_y := 720.0 * BattleScreen.Backdrop.FIELD_TOP + 20.0
+	var rows_ok := true
+	var clamped_seen := false
+	for s in range(1, 8):
+		var bf := BattleScreen.new()
+		bf.hero = Hero.new("knight")
+		bf.wave = 19  # поздняя волна: много врагов, высокие строи
+		bf.rng_seed = s
+		bf._ready()
+		for e in bf._enemies:
+			if e.position.y < min_y - 0.01:
+				rows_ok = false
+			if absf(e.position.y - min_y) < 0.01:
+				clamped_seen = true
+		bf.free()
+	_check(rows_ok, "ни один враг не стоит выше поля боя (7 зёрен на 19-й волне)")
+	_check(clamped_seen, "прижатие к полю реально срабатывает (верхние ряды строя)")
 
 
 func _test_attack_jitter() -> void:
