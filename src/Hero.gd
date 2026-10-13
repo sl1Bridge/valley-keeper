@@ -63,9 +63,20 @@ const DEF_K := 19.0    # защита: доля снижения урона (а�
 const SPD_CAP := 2.0   # ловкость: до +200% к темпу атаки (максимум 3 уд/с)
 const SPD_K := 22.0    # 5 → ~1.10 уд/с, 10 → ~1.34 уд/с
 const SURV_HP_CAP := 140.0  # выносливость → макс. здоровье: до 140 HP
-const SURV_HP_K := 10.0     # выносливость 5 → ~28 HP, 30 → 126 HP
+const SURV_HP_K := 10.0     # выносливость 5 → ~28 HP, 30 → ~117 HP (с капами)
 const REGEN_CAP := 8.0  # выносливость → регенерация: до 8 HP/с
-const REGEN_K := 16.0   # 5 → ~0.7 HP/с, 30 → ~6.2 HP/с
+const REGEN_K := 16.0   # 5 → ~0.7 HP/с, 30 → ~5.3 HP/с (с капами)
+
+## Софт- и хард-капы сырых очков характеристик: до софт-капа каждое очко
+## работает в полную силу; между капами каждое очко считается за
+## STAT_SOFT_MULT, сверх хард-капа — за STAT_HARD_MULT. Применяются к
+## итоговой сумме очков (база + вложенные + предметы) в effective() перед
+## формулами затухания; штрафы предметов проходят без изменений.
+## Временные значения, уточнить по игротестам.
+const STAT_SOFT_CAP := 15.0
+const STAT_HARD_CAP := 30.0
+const STAT_SOFT_MULT := 0.5
+const STAT_HARD_MULT := 0.25
 const CLASS_CAP := 0.6  # уворот/блок: жёсткий предел 60% (проценты складываются напрямую)
 # Фиксированное восстановление здоровья за передышку между волнами
 const REST_HEAL := 25.0
@@ -163,15 +174,29 @@ static func diminish(raw: float, cap: float, k: float) -> float:
 	return cap * raw * absf(raw) / (raw * raw + k * k)
 
 
-## Реальные боевые значения из сырых очков:
-## def_pct — доля снижения урона, aps — атак в секунду,
-## max_hp и regen_hp — здоровье и регенерация из Выносливости,
-## class_pct — шанс уворота/блока (прямая сумма процентов, предел CLASS_CAP).
+## Эффективные очки с учётом софт- и хард-капов: сверх софт-капа каждое
+## очко даёт STAT_SOFT_MULT, сверх хард-капа — STAT_HARD_MULT.
+## Отрицательные значения (штрафы предметов) проходят без изменений.
+static func cap_points(raw: float) -> float:
+	if raw <= STAT_SOFT_CAP:
+		return raw
+	if raw <= STAT_HARD_CAP:
+		return STAT_SOFT_CAP + (raw - STAT_SOFT_CAP) * STAT_SOFT_MULT
+	return STAT_SOFT_CAP + (STAT_HARD_CAP - STAT_SOFT_CAP) * STAT_SOFT_MULT + (raw - STAT_HARD_CAP) * STAT_HARD_MULT
+
+
+## Реальные боевые значения из сырых очков. Сначала сумма очков проходит
+## софт-/хард-капы (cap_points), затем формулы затухания:
+## atk — эффективная сила (урон), def_pct — доля снижения урона,
+## aps — атак в секунду, max_hp и regen_hp — здоровье и регенерация
+## из Выносливости, class_pct — шанс уворота/блока (прямая сумма
+## процентов, предел CLASS_CAP; без капов очков).
 static func effective(stats: Dictionary) -> Dictionary:
 	var e := {}
-	e["def_pct"] = diminish(maxf(0.0, stats.get("def", 0.0)), 1.0, DEF_K)
-	e["aps"] = maxf(0.2, 1.0 + diminish(stats.get("spd", 0.0), SPD_CAP, SPD_K))
-	var surv_raw: float = maxf(0.0, stats.get("surv", 0.0))
+	e["atk"] = cap_points(stats.get("atk", 0.0))
+	e["def_pct"] = diminish(maxf(0.0, cap_points(stats.get("def", 0.0))), 1.0, DEF_K)
+	e["aps"] = maxf(0.2, 1.0 + diminish(cap_points(stats.get("spd", 0.0)), SPD_CAP, SPD_K))
+	var surv_raw: float = maxf(0.0, cap_points(stats.get("surv", 0.0)))
 	e["max_hp"] = diminish(surv_raw, SURV_HP_CAP, SURV_HP_K)
 	e["regen_hp"] = diminish(surv_raw, REGEN_CAP, REGEN_K)
 	var class_pct_raw: float = maxf(0.0, stats.get("dodge", stats.get("block", 0.0)))

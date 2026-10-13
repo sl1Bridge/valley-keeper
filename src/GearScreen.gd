@@ -175,13 +175,13 @@ func _build_hero_panel(columns: HBoxContainer) -> void:
 			plus.pressed.connect(_on_stat_plus.bind(key))
 			row.add_child(plus)
 
-	# Калькулятор урона в секунду: Сила × скорость атаки
-	var dps: float = stats.get("atk", 0.0) * eff["aps"]
+	# Калькулятор урона в секунду: эффективная Сила × скорость атаки
+	var dps: float = eff["atk"] * eff["aps"]
 	var dps_lbl := Label.new()
 	dps_lbl.text = "Урон в секунду: %.1f" % dps
 	dps_lbl.add_theme_font_size_override("font_size", 18)
 	dps_lbl.modulate = Color(1.0, 0.85, 0.5)
-	dps_lbl.tooltip_text = "Сила × скорость атаки: %d × %.2f уд/с\nБез учёта защиты и уворота цели" % [int(stats.get("atk", 0)), eff["aps"]]
+	dps_lbl.tooltip_text = "Сила × скорость атаки: %d × %.2f уд/с\nБез учёта защиты и уворота цели" % [int(eff["atk"]), eff["aps"]]
 	box.add_child(dps_lbl)
 
 

@@ -149,6 +149,7 @@ func _hero_battle_stats() -> Dictionary:
 		for k in ["atk", "spd", "def", "surv"]:
 			stats[k] = stats.get(k, 0.0) * (1.0 - poison)
 	var eff := Hero.effective(stats)
+	stats["atk"] = eff["atk"]  # сила тоже проходит капы очков
 	stats["hp"] = eff["max_hp"]
 	stats["spd"] = eff["aps"]
 	_apply_hero_effects(_hero_actor, eff)

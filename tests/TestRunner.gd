@@ -389,12 +389,22 @@ func _test_diminishing() -> void:
 	var e15 := Hero.effective({"def": 15, "spd": 0, "surv": 0})
 	_check(e15["def_pct"] > 0.35 and e15["def_pct"] < 0.42, "защита 15 → ~38%%")
 	var e30 := Hero.effective({"def": 30, "spd": 0, "surv": 0})
-	_check(e30["def_pct"] > 0.70 and e30["def_pct"] < 0.73, "защита 30 → ~71%%")
+	_check(e30["def_pct"] > 0.56 and e30["def_pct"] < 0.61, "защита 30 → ~58%% (софт-кап уменьшил прирост)")
 	var inc1: float = e15["def_pct"] - e5["def_pct"]
 	var e45 := Hero.effective({"def": 45, "spd": 0, "surv": 0})
+	_check(e45["def_pct"] > 0.63 and e45["def_pct"] < 0.68, "защита 45 → ~66%% (хард-кап уменьшил ещё сильнее)")
 	var inc2: float = e45["def_pct"] - e30["def_pct"]
 	_check(inc2 < inc1, "прирост защиты затухает на высоких значениях (45→30 слабее 5→15)")
 	_check(e5["def_pct"] < e15["def_pct"] / 3.0, "на низких значениях эффект занижен (S-кривая)")
+
+	# Софт- и хард-капы очков: до 15 — полная сила, 15–30 — прирост ×0.5, сверх 30 — ×0.25
+	_check(absf(Hero.cap_points(10.0) - 10.0) < 0.001, "до софт-капа очки без изменений")
+	_check(absf(Hero.cap_points(Hero.STAT_SOFT_CAP) - Hero.STAT_SOFT_CAP) < 0.001, "на софт-капе очки без изменений")
+	_check(absf(Hero.cap_points(20.0) - 17.5) < 0.001, "между капами прирост ×0.5 (20 → 17.5)")
+	_check(absf(Hero.cap_points(50.0) - 27.5) < 0.001, "сверх хард-капа прирост ×0.25 (50 → 27.5)")
+	_check(absf(Hero.cap_points(-5.0) + 5.0) < 0.001, "штрафы проходят без капов")
+	_check(absf(Hero.effective({"atk": 40.0})["atk"] - 25.0) < 0.001, "сила тоже проходит капы (40 → 25)")
+	_check(absf(Hero.effective({"atk": 8.0})["atk"] - 8.0) < 0.001, "сила ниже софт-капа без изменений")
 
 	_check(absf(e0["aps"] - 1.0) < 0.001, "без очков ловкости — базовый темп 1.00 уд/с")
 	var s5 := Hero.effective({"spd": 5, "def": 0, "surv": 0})
@@ -412,9 +422,9 @@ func _test_diminishing() -> void:
 	_check(v5["regen_hp"] > 0.6 and v5["regen_hp"] < 0.8, "выносливость 5 → ~0.7 HP/с")
 	var v15 := Hero.effective({"surv": 15, "def": 0, "spd": 0})
 	var v30 := Hero.effective({"surv": 30, "def": 0, "spd": 0})
-	_check(absf(v30["max_hp"] - 126.0) < 0.5, "выносливость 30 → 126 HP")
+	_check(absf(v30["max_hp"] - 117.0) < 0.5, "выносливость 30 → ~117 HP (с капами)")
 	var v80 := Hero.effective({"surv": 80, "def": 0, "spd": 0})
-	_check(v80["regen_hp"] > 7.5 and v80["regen_hp"] < 8.0, "выносливость 80 → ~7.7 HP/с")
+	_check(v80["regen_hp"] > 6.4 and v80["regen_hp"] < 6.8, "выносливость 80 → ~6.6 HP/с (с капами)")
 	var hp_inc1: float = v15["max_hp"] - v5["max_hp"]
 	var hp_inc2: float = v30["max_hp"] - v15["max_hp"]
 	_check(hp_inc2 < hp_inc1, "прирост здоровья от выносливости затухает")
