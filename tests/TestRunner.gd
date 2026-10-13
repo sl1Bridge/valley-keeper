@@ -1048,6 +1048,13 @@ func _test_battle_layout() -> void:
 	b.wave = 1
 	b._ready()
 	_check(b.mouse_filter == Control.MOUSE_FILTER_IGNORE, "экран боя не перехватывает мышь — сундуки кликаются")
+	# Звуки назначены: герою — атака, блок/уворот и смерть по классу; врагам — атака и смерть
+	_check(b._hero_actor.attack_sfx != null and b._hero_actor.evade_sfx != null and b._hero_actor.death_sfx != null, "герою назначены звуки атаки, уворота/блока и гибели")
+	var enemies_sfx := true
+	for e in b._enemies:
+		if e.attack_sfx == null or e.death_sfx == null:
+			enemies_sfx = false
+	_check(enemies_sfx and not b._enemies.is_empty(), "врагам назначены звуки атаки и гибели")
 	b.free()
 
 	# Строй не уходит на задний фон: ноги врагов не выше верхней кромки поля

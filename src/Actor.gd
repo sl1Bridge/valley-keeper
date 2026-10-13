@@ -12,7 +12,11 @@ signal poisoned  # состав стаков отравления изменил
 signal cast_ready(actor)  # умение заряжено (таймер дошёл до конца)
 
 ## Сгенерированные mp3 громче комфортного уровня — играем тише (децибелы).
+## Поправки по категориям (временные, уточнить по игротестам): свист уворота
+## записан громко, звон блока тихо — усреднённо −3 дБ; смерть врага громкая — −6 дБ.
 const ATTACK_SFX_DB := -6.0
+const EVADE_SFX_DB := -3.0
+const DEATH_SFX_DB := -6.0
 
 var display_name := ""
 var team := "enemy"  # "hero" или "enemy"
@@ -37,6 +41,8 @@ var shape := "rect"  # "rect" | "circle" | "triangle"
 var radius := 30.0
 var move_speed := 80.0
 var attack_sfx: AudioStream = null  # звук атаки (назначает экран боя), играется в шину "SFX"
+var evade_sfx: AudioStream = null   # звук уворота/блока при полном избегании атаки
+var death_sfx: AudioStream = null   # звук гибели бойца
 var alive := true
 var engaged := false
 var target: Actor = null
@@ -215,7 +221,7 @@ func _attack() -> void:
 	# Захватываем цель локально: take_damage может её убить, тогда
 	# _on_enemy_died обнуляет self.target ещё до отправки сигнала attacked.
 	var t: Actor = target
-	_play_attack_sfx()
+	_play_sfx(attack_sfx, ATTACK_SFX_DB)
 	# Защита цели снижает урон на процент (def_pct), минимум 1.
 	# Округление вниз: иначе мелкие атаки первых волн бьют больнее, чем раньше.
 	# Множитель следующей атаки (способность Вора) тратится этим ударом.
@@ -225,14 +231,14 @@ func _attack() -> void:
 	attacked.emit(self, t)
 
 
-## Звук атаки: одноразовый плеер на удар (несколько бойцов могут бить
-## одновременно — каждый звук играется своим плеером и не обрывает другие).
-func _play_attack_sfx() -> void:
-	if attack_sfx == null or not is_inside_tree():
+## Звук бойца: одноразовый плеер на событие (несколько звуков могут играть
+## одновременно — каждый своим плеером и не обрывает другие). Шина "SFX".
+func _play_sfx(stream: AudioStream, db: float) -> void:
+	if stream == null or not is_inside_tree():
 		return
 	var p := AudioStreamPlayer.new()
-	p.stream = attack_sfx
-	p.volume_db = ATTACK_SFX_DB
+	p.stream = stream
+	p.volume_db = db
 	if AudioServer.get_bus_index("SFX") != -1:
 		p.bus = "SFX"
 	add_child(p)
@@ -245,6 +251,7 @@ func take_damage(dmg: int) -> void:
 		return
 	# Уворот/блок: атака полностью избегнута
 	if evasion > 0.0 and randf() < evasion:
+		_play_sfx(evade_sfx, EVADE_SFX_DB)
 		evaded.emit(self)
 		return
 	hp -= dmg
@@ -252,10 +259,16 @@ func take_damage(dmg: int) -> void:
 	damaged.emit(self, dmg)
 	queue_redraw()
 	if hp <= 0:
-		hp = 0
-		alive = false
-		died.emit(self)
-		queue_redraw()
+		_die()
+
+
+## Гибель бойца: звук, сигнал, перерисовка (общая точка для всех источников урона).
+func _die() -> void:
+	hp = 0
+	alive = false
+	_play_sfx(death_sfx, DEATH_SFX_DB)
+	died.emit(self)
+	queue_redraw()
 
 
 ## Урон от эффектов (кровотечение): идёт мимо уворота и защиты.
@@ -267,10 +280,7 @@ func _take_dot(dmg: int) -> void:
 	damaged.emit(self, dmg)
 	queue_redraw()
 	if hp <= 0:
-		hp = 0
-		alive = false
-		died.emit(self)
-		queue_redraw()
+		_die()
 
 
 func hp_fraction() -> float:

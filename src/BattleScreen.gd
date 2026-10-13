@@ -31,6 +31,14 @@ const SFX_ATTACK_ENEMY := {
 	"golem": preload("res://assets/sfx/attack_golem.mp3"),
 	"boss": preload("res://assets/sfx/attack_boss.mp3"),
 }
+## Уворот/блок — только у героя (у врагов уклонения нет): по классу.
+const SFX_EVADE_HERO := {
+	"knight": preload("res://assets/sfx/block_shield.mp3"),
+	"thief": preload("res://assets/sfx/dodge_whoosh.mp3"),
+}
+## Гибель: герою — своя, всем врагам — общая.
+const SFX_DEATH_HERO := preload("res://assets/sfx/death_hero.mp3")
+const SFX_DEATH_ENEMY := preload("res://assets/sfx/death_enemy.mp3")
 
 ## Строи по числу врагов: смещения от FORMATION_ANCHOR.
 ## Один враг — напротив героя; больше — разные построения, не колонной.
@@ -181,6 +189,8 @@ func _spawn_hero() -> void:
 	_hero_actor.position = HERO_POS
 	_hero_actor.engaged = true
 	_hero_actor.attack_sfx = SFX_ATTACK_HERO.get(hero.kind)
+	_hero_actor.evade_sfx = SFX_EVADE_HERO.get(hero.kind)
+	_hero_actor.death_sfx = SFX_DEATH_HERO
 	_hero_actor.died.connect(_on_hero_died)
 	_hero_actor.damaged.connect(_on_actor_damaged)
 	_hero_actor.attacked.connect(_on_actor_attacked)
@@ -270,6 +280,7 @@ func _add_enemy(type: String, pos: Vector2, taunt: bool, summoned := false) -> A
 	# Защита врага — по той же формуле затухания, что и у героя
 	e.def_pct = Hero.diminish(float(stats.get("def", 0)), 1.0, Hero.DEF_K)
 	e.attack_sfx = SFX_ATTACK_ENEMY.get(type)
+	e.death_sfx = SFX_DEATH_ENEMY
 	e.taunt = taunt
 	e.position = pos
 	e.engaged = true
