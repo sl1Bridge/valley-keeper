@@ -27,6 +27,7 @@ var stun_left := 0.0   # оставшееся время оглушения (0 �
 var taunt := false     # провокация: герой атакует этого врага в первую очередь
 var cast_interval := 0.0  # период умения в секундах (0 — умения нет)
 var cast_timer := 0.0     # накопленное время до готовности умения
+var cast_blocked := false # перезарядка умения на паузе (у босса — пока живы призванные)
 var dmg_mult_next := 1.0  # множитель урона следующей атаки (способность Вора «Смертельный удар»)
 var body_color := Color.WHITE
 var shape := "rect"  # "rect" | "circle" | "triangle"
@@ -142,8 +143,9 @@ func step(delta: float) -> void:
 	if alive and engaged and regen > 0.0 and hp < max_hp:
 		hp = minf(max_hp, hp + regen * delta)
 		queue_redraw()
-	# Умение: копится заряд, по заполнении — сигнал (обрабатывает экран боя)
-	if alive and engaged and cast_interval > 0.0:
+	# Умение: копится заряд, по заполнении — сигнал (обрабатывает экран боя).
+	# На паузе (cast_blocked) таймер и прогресс-бар стоят.
+	if alive and engaged and cast_interval > 0.0 and not cast_blocked:
 		cast_timer += delta
 		queue_redraw()  # прогресс-бар умения
 		if cast_timer >= cast_interval:

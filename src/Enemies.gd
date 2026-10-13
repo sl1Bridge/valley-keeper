@@ -132,7 +132,7 @@ const ATK_JITTER := 0.25
 ## Описание умения типа врага (для подсказки при наведении). Пустая строка — умения нет.
 static func ability_desc(type: String) -> String:
 	if type == "boss":
-		return "Призыв: каждые %d с призывает союзников с Провокацией (ценность %d)" % [roundi(SUMMON_INTERVAL), SUMMON_VALUE]
+		return "Призыв: каждые %d с призывает союзников с Провокацией (ценность %d); перезарядка не идёт, пока живы призванные" % [roundi(SUMMON_INTERVAL), SUMMON_VALUE]
 	return ""
 
 

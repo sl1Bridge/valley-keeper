@@ -56,6 +56,7 @@ var _ability_armed := false  # «Смертельный удар» заряже�
 
 var _world: Node2D
 var _hero_actor: Actor
+var _boss: Actor = null  # босс текущей волны (для паузы перезарядки призыва)
 var _enemies := []
 
 # Сундуки на поле боя (узлы Chest)
@@ -78,6 +79,13 @@ func _ready() -> void:
 	else:
 		_rng.randomize()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Родитель — Main (Node, не Control): якоря не задают размер сами
+	# (та же особенность, что у модальных окон, — см. Main.SurrenderDialog).
+	# Без явного размера всё, привязанное к низу экрана (иконка способности),
+	# уезжает за верхний край: высота экрана считается нулевой.
+	if is_inside_tree():
+		_sync_size()
+		get_viewport().size_changed.connect(_sync_size)
 	add_child(Backdrop.new())
 	_build_hud()
 	_world = Node2D.new()
@@ -241,6 +249,7 @@ func _add_enemy(type: String, pos: Vector2, taunt: bool, summoned := false) -> A
 		# Умение босса: призыв союзников с провокацией (прогресс-бар над боссом)
 		e.cast_interval = Enemies.SUMMON_INTERVAL
 		e.cast_ready.connect(_on_boss_cast)
+		_boss = e
 	# Зона наведения: подсказка с характеристиками, эффектами, умениями и свойствами
 	var hover := Control.new()
 	hover.position = Vector2(-e.radius, -e.radius * 2.0)
@@ -276,10 +285,24 @@ func _on_boss_cast(boss: Actor) -> void:
 		_enemy_total += 1  # призванные тоже считаются врагами волны
 		i += 1
 	_spawn_popup("Призыв!", boss.position + Vector2(-40, -boss.radius * 2.0 - 70), Color(0.72, 0.5, 0.95), 20)
+	_update_boss_cast_block()  # пока призванные живы, перезарядка не идёт
 	_update_hud()
 	# Провокация: герой бьёт призванных в приоритете, босс — только когда они мертвы
 	if _hero_actor.target == null or not _hero_actor.target.taunt:
 		_pick_hero_target()
+
+
+## Перезарядка призыва не идёт, пока живы ранее призванные союзники:
+## прогресс-бар умения босса встаёт на паузе (Actor.cast_blocked).
+func _update_boss_cast_block() -> void:
+	if _boss == null or not is_instance_valid(_boss):
+		return
+	var blocked := false
+	for e in _enemies:
+		if e.alive and e.stats.get("summoned", false):
+			blocked = true
+			break
+	_boss.cast_blocked = blocked
 
 
 ## Подсказка при наведении на врага: характеристики, эффекты,
@@ -334,6 +357,12 @@ func _update_hud() -> void:
 
 func _process(delta: float) -> void:
 	step(delta)
+
+
+## Размер экрана — по вьюпорту (см. _ready): родитель не Control,
+## поэтому за якорями следим вручную.
+func _sync_size() -> void:
+	size = get_viewport_rect().size
 
 
 ## Один шаг логики боя. Вынесен отдельно, чтобы прогонять в тестах.
@@ -426,6 +455,7 @@ func _on_enemy_died(e: Actor) -> void:
 		_show_center("Босс повержен!")
 		_emit_deferred(boss_defeated)
 
+	_update_boss_cast_block()  # если умерли последние призванные — призыв снова заряжается
 	_update_hud()
 
 

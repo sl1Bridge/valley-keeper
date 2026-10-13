@@ -114,9 +114,9 @@ const ABILITY_INFO := {
 	"roar": {"name": "Рёв", "color": Color(0.95, 0.72, 0.3)},
 	"execute": {"name": "Смертельный удар", "color": Color(0.88, 0.3, 0.32)},
 }
-const ABILITY_BASE_CD := 12.0      # кулдаун на 1 уровне, секунд (временное)
-const ABILITY_CD_PER_LEVEL := 0.5  # уменьшение кулдауна за уровень (временное)
-const ABILITY_MIN_CD := 5.0        # нижний предел кулдауна (временное)
+const ABILITY_BASE_CD := 6.0       # кулдаун на 1 уровне, секунд (временное)
+const ABILITY_CD_PER_LEVEL := 0.2  # уменьшение кулдауна за уровень (временное)
+const ABILITY_MIN_CD := {"roar": 4.0, "execute": 1.0}  # нижний предел кулдауна по способностям (временное)
 const ROAR_STUN := 0.01            # длительность оглушения от «Рёва» (сброс атаки)
 const EXECUTE_MULT := 2.0          # множитель урона «Смертельного удара»
 
@@ -184,9 +184,10 @@ func ability_name() -> String:
 
 
 ## Текущий кулдаун способности: базовый минус за каждый уровень,
-## не ниже предела. Каждый новый бой отсчёт начинается с нуля.
+## не ниже предела (у каждой способности свой). Каждый новый бой
+## отсчёт начинается с нуля.
 func ability_cooldown() -> float:
-	return maxf(ABILITY_MIN_CD, ABILITY_BASE_CD - ABILITY_CD_PER_LEVEL * float(level - 1))
+	return maxf(float(ABILITY_MIN_CD[ability_kind()]), ABILITY_BASE_CD - ABILITY_CD_PER_LEVEL * float(level - 1))
 
 
 ## Что делает способность (для подсказки).

@@ -68,8 +68,11 @@ func _process(_delta: float) -> bool:
 		if _frames >= 30:
 			var main := root.get_node("Main")
 			_check(main._screen is BattleScreen, "Main переключился на экран боя")
-			var actor_col: Color = (main._screen as BattleScreen)._hero_actor.body_color
+			var bs := main._screen as BattleScreen
+			var actor_col: Color = bs._hero_actor.body_color
 			_check(actor_col == Hero.ROSTER["knight"]["color"], "на поле боя — внешность выбранного героя")
+			_check(bs.size.y > 100.0, "экран боя имеет реальный размер (родитель — Node, якоря не работают сами)")
+			_check(bs._ability_icon.position.y > 100.0, "иконка способности в нижней части экрана, а не за верхним краем")
 			_test_surrender_flow(main)
 			_test_victory_flow(main)
 			return _finish()
@@ -935,14 +938,37 @@ func _test_summon_taunt() -> void:
 		b._on_enemy_died(summons[i])
 	_check(b._hero_actor.target == boss, "когда призванные мертвы — герой снова бьёт босса")
 
-	# Лимит живых призванных: повторные призывы не плодят толпу
-	for i in 5:
-		boss.step(Enemies.SUMMON_INTERVAL + 0.1)
-	var active := 0
+	# Перезарядка призыва не идёт, пока живы призванные: таймер и прогресс-бар стоят
+	# (все призванные из первой партии мертвы — перезарядка возобновилась)
+	_check(not boss.cast_blocked, "без живых призванных перезарядка призыва идёт")
+	boss.step(Enemies.SUMMON_INTERVAL + 0.1)  # новый призыв
+	var wave2 := []
 	for e in b._enemies:
-		if e.alive and e.taunt:
-			active += 1
-	_check(active == Enemies.SUMMON_MAX_ACTIVE, "живых призванных ровно лимит %d" % Enemies.SUMMON_MAX_ACTIVE)
+		if e != boss and e.alive:
+			wave2.append(e)
+	_check(wave2.size() >= 1, "босс призвал новую партию (%d)" % wave2.size())
+	_check(boss.cast_blocked, "пока живы призванные — перезарядка на паузе")
+	var timer_frozen: float = boss.cast_timer
+	boss.step(Enemies.SUMMON_INTERVAL + 0.1)
+	_check(absf(boss.cast_timer - timer_frozen) < 0.001, "таймер призыва не идёт, пока живы призванные")
+	var alive_blocked := 0
+	for e in b._enemies:
+		if e != boss and e.alive:
+			alive_blocked += 1
+	_check(alive_blocked == wave2.size(), "повторного призыва нет, пока жива предыдущая партия")
+
+	# Все призванные погибли — перезарядка возобновляется, босс призывает снова
+	for s in wave2:
+		s.alive = false
+		b._on_enemy_died(s)
+	_check(not boss.cast_blocked, "после гибели призванных перезарядка возобновилась")
+	boss.step(Enemies.SUMMON_INTERVAL + 0.1)
+	var alive_resumed := 0
+	for e in b._enemies:
+		if e != boss and e.alive:
+			alive_resumed += 1
+	_check(alive_resumed >= 1, "после гибели предыдущих босс призывает снова")
+	_check(alive_resumed <= Enemies.SUMMON_MAX_ACTIVE, "живых призванных не больше лимита %d" % Enemies.SUMMON_MAX_ACTIVE)
 	b.free()
 
 
@@ -954,7 +980,11 @@ func _test_hero_abilities() -> void:
 	k.level = 5
 	_check(k.ability_cooldown() < Hero.ABILITY_BASE_CD, "кулдаун уменьшается с уровнем героя")
 	k.level = 100
-	_check(absf(k.ability_cooldown() - Hero.ABILITY_MIN_CD) < 0.001, "кулдаун ограничен минимумом %.1f с" % Hero.ABILITY_MIN_CD)
+	_check(absf(k.ability_cooldown() - Hero.ABILITY_MIN_CD["roar"]) < 0.001, "кулдаун Рёва ограничен минимумом %.1f с" % Hero.ABILITY_MIN_CD["roar"])
+	var r_max := Hero.new("rogue")
+	r_max.level = 100
+	_check(absf(r_max.ability_cooldown() - Hero.ABILITY_MIN_CD["execute"]) < 0.001, "кулдаун Смертельного удара ограничен минимумом %.1f с" % Hero.ABILITY_MIN_CD["execute"])
+	_check(Hero.ABILITY_MIN_CD["execute"] < Hero.ABILITY_MIN_CD["roar"], "минимальный кулдаун Вора ниже, чем у Рыцаря")
 	_check(k.ability_name() == "Рёв", "способность Рыцаря — «Рёв»")
 	var r := Hero.new("rogue")
 	_check(r.ability_name() == "Смертельный удар", "способность Вора — «Смертельный удар»")
