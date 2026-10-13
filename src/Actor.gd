@@ -27,6 +27,7 @@ var stun_left := 0.0   # оставшееся время оглушения (0 �
 var taunt := false     # провокация: герой атакует этого врага в первую очередь
 var cast_interval := 0.0  # период умения в секундах (0 — умения нет)
 var cast_timer := 0.0     # накопленное время до готовности умения
+var dmg_mult_next := 1.0  # множитель урона следующей атаки (способность Вора «Смертельный удар»)
 var body_color := Color.WHITE
 var shape := "rect"  # "rect" | "circle" | "triangle"
 var radius := 30.0
@@ -210,7 +211,9 @@ func _attack() -> void:
 	var t: Actor = target
 	# Защита цели снижает урон на процент (def_pct), минимум 1.
 	# Округление вниз: иначе мелкие атаки первых волн бьют больнее, чем раньше.
-	var dmg := maxi(1, floori(float(stats.get("atk", 1)) * (1.0 - t.def_pct)))
+	# Множитель следующей атаки (способность Вора) тратится этим ударом.
+	var dmg := maxi(1, floori(float(stats.get("atk", 1)) * (1.0 - t.def_pct) * dmg_mult_next))
+	dmg_mult_next = 1.0
 	t.take_damage(dmg)
 	attacked.emit(self, t)
 

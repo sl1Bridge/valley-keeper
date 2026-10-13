@@ -25,6 +25,7 @@ func _initialize() -> void:
 	_test_bleed_stun()
 	_test_enemy_tooltip()
 	_test_summon_taunt()
+	_test_hero_abilities()
 	_test_attack_jitter()
 	_test_chests_heal_speed()
 	_test_battle_sim()
@@ -943,6 +944,68 @@ func _test_summon_taunt() -> void:
 			active += 1
 	_check(active == Enemies.SUMMON_MAX_ACTIVE, "живых призванных ровно лимит %d" % Enemies.SUMMON_MAX_ACTIVE)
 	b.free()
+
+
+func _test_hero_abilities() -> void:
+	print("-- Способности героев: Рёв и Смертельный удар --")
+	# Кулдаун: база на 1 уровне, уменьшается с уровнем, ограничен минимумом
+	var k := Hero.new("knight")
+	_check(absf(k.ability_cooldown() - Hero.ABILITY_BASE_CD) < 0.001, "на 1 уровне — базовый кулдаун %.1f с" % Hero.ABILITY_BASE_CD)
+	k.level = 5
+	_check(k.ability_cooldown() < Hero.ABILITY_BASE_CD, "кулдаун уменьшается с уровнем героя")
+	k.level = 100
+	_check(absf(k.ability_cooldown() - Hero.ABILITY_MIN_CD) < 0.001, "кулдаун ограничен минимумом %.1f с" % Hero.ABILITY_MIN_CD)
+	_check(k.ability_name() == "Рёв", "способность Рыцаря — «Рёв»")
+	var r := Hero.new("rogue")
+	_check(r.ability_name() == "Смертельный удар", "способность Вора — «Смертельный удар»")
+	_check("Перезарядка" in k.ability_tooltip() and "Перезарядка" in r.ability_tooltip(), "в подсказке способности указан кулдаун")
+
+	# Рёв: срабатывает по кулдауну, сбрасывает атаку всех врагов, не трогает призыв босса
+	var b := BattleScreen.new()
+	b.hero = Hero.new("knight")
+	b.wave = Enemies.TOTAL_WAVES
+	b.rng_seed = 11
+	b._ready()
+	_check(b._ability_timer == 0.0 and b._ability_icon.fill == 0.0, "каждый новый бой кулдаун начинается с нуля")
+	_check(b._ability_icon.tooltip_text != "", "у иконки способности есть подсказка")
+	var boss: Actor = b._enemies[0]
+	boss._atk_timer = 0.4
+	boss.cast_timer = 3.0
+	var cd: float = b.hero.ability_cooldown()
+	b.step(cd + 0.1)
+	_check(boss.stun_left > 0.0, "Рёв оглушил врага")
+	_check(boss._atk_timer == 0.0, "Рёв сбросил таймер атаки врага")
+	_check(absf(boss.cast_timer - 3.0) < 0.001, "Рёв не сбросил призыв босса")
+	_check(b._ability_timer == 0.0 and b._ability_icon.fill == 0.0, "после Рёва перезарядка пошла заново")
+	b.free()
+
+	# Смертельный удар: заряд ждёт атаки, удваивает урон, перезарядка после удара
+	var b2 := BattleScreen.new()
+	b2.hero = Hero.new("rogue")
+	b2.wave = 1
+	b2.rng_seed = 12
+	b2._ready()
+	b2.step(cd + 0.1)
+	_check(b2._ability_armed, "Смертельный удар зарядился")
+	_check(b2._hero_actor.dmg_mult_next == Hero.EXECUTE_MULT, "следующий удар усилен ×%d" % int(Hero.EXECUTE_MULT))
+	_check(b2._ability_icon.fill == 1.0, "иконка цветная, пока способность готова")
+	b2.step(2.0)
+	_check(b2._ability_armed and b2._ability_timer >= b2._ability_cd - 0.001, "пока заряд не потрачен — перезарядка не копится")
+	var enemy: Actor = b2._enemies[0]
+	enemy.def_pct = 0.0
+	enemy.max_hp = 500.0  # цель условно живучая: тест про урон, а не про гибель
+	enemy.hp = 500.0
+	var atk: float = b2._hero_actor.stats["atk"]
+	var hp0: float = enemy.hp
+	b2._hero_actor.target = enemy
+	b2._hero_actor._attack()
+	_check(absf(enemy.hp - (hp0 - floorf(atk * Hero.EXECUTE_MULT))) < 0.01, "удар под способностью — двойной урон (%d)" % floori(atk * Hero.EXECUTE_MULT))
+	_check(b2._hero_actor.dmg_mult_next == 1.0, "усиление потрачено ударом")
+	_check(not b2._ability_armed and b2._ability_timer == 0.0 and b2._ability_icon.fill == 0.0, "перезарядка началась заново после атаки")
+	var hp1: float = enemy.hp
+	b2._hero_actor._attack()
+	_check(absf(enemy.hp - (hp1 - floorf(atk))) < 0.01, "следующий удар — обычный урон")
+	b2.free()
 
 
 func _test_attack_jitter() -> void:

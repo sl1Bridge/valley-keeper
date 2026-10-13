@@ -49,6 +49,11 @@ var _enemy_total := 0
 var _boss_dead := false
 var _speed := 1.0
 
+# Способность героя: кулдаун тикает только в фазе боя и каждый бой с нуля
+var _ability_cd := 1.0       # текущий кулдаун (пересчитывается от уровня героя)
+var _ability_timer := 0.0    # накопленное время перезарядки
+var _ability_armed := false  # «Смертельный удар» заряжен и ждёт атаки героя
+
 var _world: Node2D
 var _hero_actor: Actor
 var _enemies := []
@@ -64,6 +69,7 @@ var _chests_label: Label
 var _hint_label: Label
 var _speed_btn: Button
 var _center_label: Label
+var _ability_icon: AbilityIcon
 
 
 func _ready() -> void:
@@ -126,6 +132,18 @@ func _build_hud() -> void:
 	_center_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_center_label.visible = false
 	add_child(_center_label)
+
+	# Иконка способности героя: левый нижний угол, заливается цветом
+	# сверху вниз по мере перезарядки, без цифр
+	_ability_icon = AbilityIcon.new(hero.ability_kind(), Hero.ABILITY_INFO[hero.ability_kind()]["color"], 56.0)
+	_ability_icon.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_ability_icon.offset_left = 16
+	_ability_icon.offset_top = -72
+	_ability_icon.offset_right = 72
+	_ability_icon.offset_bottom = -16
+	_ability_icon.tooltip_text = hero.ability_tooltip()
+	_ability_icon.set_fill(0.0)
+	add_child(_ability_icon)
 
 
 func _spawn_hero() -> void:
@@ -319,11 +337,46 @@ func _process(delta: float) -> void:
 
 
 ## Один шаг логики боя. Вынесен отдельно, чтобы прогонять в тестах.
-func step(_delta: float) -> void:
+func step(delta: float) -> void:
 	if _state != "fight":
 		return
+	_tick_ability(delta)
 	if _kills >= _enemy_total:
 		_start_loot_phase()
+
+
+## Способность героя: кулдаун копится только в фазе боя. Рыцарь («Рёв»)
+## срабатывает сразу по готовности; Вор («Смертельный удар») держит заряд,
+## пока не атакует, — в это время перезарядка не идёт.
+func _tick_ability(delta: float) -> void:
+	if not is_instance_valid(_hero_actor) or not _hero_actor.alive:
+		return
+	if _ability_armed:
+		return  # заряд ждёт удара, кулдаун стоит
+	_ability_cd = hero.ability_cooldown()  # уровень мог вырасти прямо в бою
+	_ability_timer = minf(_ability_cd, _ability_timer + delta)
+	_ability_icon.set_fill(_ability_timer / _ability_cd)
+	if _ability_timer >= _ability_cd:
+		_trigger_ability()
+
+
+func _trigger_ability() -> void:
+	if hero.kind == "knight":
+		# Рёв: мгновенный стан всех врагов — сбрасывает накопленную атаку
+		# (Actor.add_stun обнуляет таймер атаки). Призыв босса не сбивается:
+		# таймер умения стан не трогает.
+		for e in _enemies:
+			if e.alive:
+				e.add_stun(Hero.ROAR_STUN)
+		_spawn_popup("Рёв!", _hero_actor.position + Vector2(-20, -_hero_actor.radius * 2.0 - 70), Hero.ABILITY_INFO["roar"]["color"], 24)
+		_ability_timer = 0.0
+		_ability_icon.set_fill(0.0)
+	else:
+		# Смертельный удар: заряжается и ждёт следующей атаки героя
+		# (тратится в _on_actor_attacked, урон удваивает Actor.dmg_mult_next)
+		_ability_armed = true
+		_hero_actor.dmg_mult_next = Hero.EXECUTE_MULT
+	_ability_icon.tooltip_text = hero.ability_tooltip()
 
 
 func _on_enemy_died(e: Actor) -> void:
@@ -401,6 +454,14 @@ func _on_actor_evaded(a: Actor) -> void:
 ## Атаки врагов могут наложить на героя статусный эффект:
 ## слизень — отравление, волк — кровотечение, голем и босс — оглушение.
 func _on_actor_attacked(src: Actor, dst: Actor) -> void:
+	# «Смертельный удар»: заряд потрачен этой атакой (урон уже удвоен
+	# множителем в Actor) — перезарядка начинается заново
+	if src == _hero_actor and _ability_armed:
+		_ability_armed = false
+		_ability_timer = 0.0
+		_ability_icon.set_fill(0.0)
+		_ability_icon.tooltip_text = hero.ability_tooltip()
+		_spawn_popup("Смертельный удар!", dst.position + Vector2(-80, -dst.radius * 2.0 - 96), Hero.ABILITY_INFO["execute"]["color"], 22)
 	if dst.team == "hero":
 		var etype: String = src.stats.get("type", "")
 		if etype == "slime" and _rng.randf() < Enemies.POISON_CHANCE:

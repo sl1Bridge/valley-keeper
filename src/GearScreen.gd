@@ -184,6 +184,19 @@ func _build_hero_panel(columns: HBoxContainer) -> void:
 	dps_lbl.tooltip_text = "Сила × скорость атаки: %d × %.2f уд/с\nБез учёта защиты и уворота цели" % [int(eff["atk"]), eff["aps"]]
 	box.add_child(dps_lbl)
 
+	# Способность героя: иконка + название; по наведению — что делает и кулдаун
+	var ab_row := HBoxContainer.new()
+	ab_row.add_theme_constant_override("separation", 10)
+	ab_row.tooltip_text = hero.ability_tooltip()
+	box.add_child(ab_row)
+	var ab_icon := AbilityIcon.new(hero.ability_kind(), Hero.ABILITY_INFO[hero.ability_kind()]["color"], 40.0)
+	ab_row.add_child(ab_icon)
+	var ab_lbl := Label.new()
+	ab_lbl.text = "Способность: %s" % hero.ability_name()
+	ab_lbl.add_theme_font_size_override("font_size", 17)
+	ab_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	ab_row.add_child(ab_lbl)
+
 
 ## Подсказка при наведении на характеристику: реальное боевое значение
 ## и чем характеристика управляет.
