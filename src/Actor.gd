@@ -11,6 +11,9 @@ signal evaded(actor)
 signal poisoned  # состав стаков отравления изменился (добавлен или истёк)
 signal cast_ready(actor)  # умение заряжено (таймер дошёл до конца)
 
+## Сгенерированные mp3 громче комфортного уровня — играем тише (децибелы).
+const ATTACK_SFX_DB := -6.0
+
 var display_name := ""
 var team := "enemy"  # "hero" или "enemy"
 var stats := {}      # hp, atk, spd (атак/с)
@@ -33,6 +36,7 @@ var body_color := Color.WHITE
 var shape := "rect"  # "rect" | "circle" | "triangle"
 var radius := 30.0
 var move_speed := 80.0
+var attack_sfx: AudioStream = null  # звук атаки (назначает экран боя), играется в шину "SFX"
 var alive := true
 var engaged := false
 var target: Actor = null
@@ -211,6 +215,7 @@ func _attack() -> void:
 	# Захватываем цель локально: take_damage может её убить, тогда
 	# _on_enemy_died обнуляет self.target ещё до отправки сигнала attacked.
 	var t: Actor = target
+	_play_attack_sfx()
 	# Защита цели снижает урон на процент (def_pct), минимум 1.
 	# Округление вниз: иначе мелкие атаки первых волн бьют больнее, чем раньше.
 	# Множитель следующей атаки (способность Вора) тратится этим ударом.
@@ -218,6 +223,21 @@ func _attack() -> void:
 	dmg_mult_next = 1.0
 	t.take_damage(dmg)
 	attacked.emit(self, t)
+
+
+## Звук атаки: одноразовый плеер на удар (несколько бойцов могут бить
+## одновременно — каждый звук играется своим плеером и не обрывает другие).
+func _play_attack_sfx() -> void:
+	if attack_sfx == null or not is_inside_tree():
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = attack_sfx
+	p.volume_db = ATTACK_SFX_DB
+	if AudioServer.get_bus_index("SFX") != -1:
+		p.bus = "SFX"
+	add_child(p)
+	p.finished.connect(p.queue_free)
+	p.play()
 
 
 func take_damage(dmg: int) -> void:

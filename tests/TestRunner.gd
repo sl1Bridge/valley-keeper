@@ -1055,6 +1055,7 @@ func _test_battle_layout() -> void:
 	var min_y := 720.0 * BattleScreen.Backdrop.FIELD_TOP + 20.0
 	var rows_ok := true
 	var clamped_seen := false
+	var spacing_ok := true
 	for s in range(1, 8):
 		var bf := BattleScreen.new()
 		bf.hero = Hero.new("knight")
@@ -1066,9 +1067,16 @@ func _test_battle_layout() -> void:
 				rows_ok = false
 			if absf(e.position.y - min_y) < 0.01:
 				clamped_seen = true
+		# Прижатие к полю — единый сдвиг строя: расстояния между врагами
+		# не схлопываются, никто не стоит друг в друге (минимум в строях ~85 px)
+		for i in bf._enemies.size():
+			for j in range(i + 1, bf._enemies.size()):
+				if bf._enemies[i].position.distance_to(bf._enemies[j].position) < 70.0:
+					spacing_ok = false
 		bf.free()
 	_check(rows_ok, "ни один враг не стоит выше поля боя (7 зёрен на 19-й волне)")
 	_check(clamped_seen, "прижатие к полю реально срабатывает (верхние ряды строя)")
+	_check(spacing_ok, "враги не накладываются друг на друга (единый сдвиг строя)")
 
 
 func _test_attack_jitter() -> void:

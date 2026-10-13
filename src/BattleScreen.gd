@@ -20,6 +20,18 @@ const FORMATION_ANCHOR := Vector2(880, 420)  # центр строя враго�
 const BOSS_POS := Vector2(920, 450)
 const FINAL_CHEST_POS := Vector2(640, 430)  # центр поля боя
 
+## Звуки атак (шина "SFX"): герою — по классу, врагу — по типу.
+const SFX_ATTACK_HERO := {
+	"knight": preload("res://assets/sfx/attack_sword.mp3"),
+	"thief": preload("res://assets/sfx/attack_dagger.mp3"),
+}
+const SFX_ATTACK_ENEMY := {
+	"slime": preload("res://assets/sfx/attack_slime.mp3"),
+	"wolf": preload("res://assets/sfx/attack_wolf.mp3"),
+	"golem": preload("res://assets/sfx/attack_golem.mp3"),
+	"boss": preload("res://assets/sfx/attack_boss.mp3"),
+}
+
 ## Строи по числу врагов: смещения от FORMATION_ANCHOR.
 ## Один враг — напротив героя; больше — разные построения, не колонной.
 const FORMATIONS := {
@@ -168,6 +180,7 @@ func _spawn_hero() -> void:
 	_hero_actor.hp = clampf(hero.start_hp(), 1.0, _hero_actor.max_hp)
 	_hero_actor.position = HERO_POS
 	_hero_actor.engaged = true
+	_hero_actor.attack_sfx = SFX_ATTACK_HERO.get(hero.kind)
 	_hero_actor.died.connect(_on_hero_died)
 	_hero_actor.damaged.connect(_on_actor_damaged)
 	_hero_actor.attacked.connect(_on_actor_attacked)
@@ -226,15 +239,21 @@ func _spawn_enemies() -> void:
 	_enemy_total = comp.size()
 	var formation: Array = FORMATIONS[mini(comp.size(), Enemies.MAX_ENEMIES)]
 	# Верхняя кромка поля боя (Backdrop.FIELD_TOP): у многочисленных строев
-	# верхние ряды вылезали на задний фон — прижимаем их к полю
+	# верхние ряды вылезали на задний фон. Строй прижимаем к полю ЕДИНЫМ
+	# сдвигом вниз: верхний ряд встаёт ровно на кромку, расстояния внутри
+	# строя сохраняются. Поточечный прижим (maxf на каждую позицию) сажал
+	# несколько рядов на одну линию — враги наезжали друг на друга.
 	var view_h := 720.0  # окно по умолчанию 1280×720; в дереве — реальный размер
 	if is_inside_tree():
 		view_h = get_viewport_rect().size.y
 	var min_y := view_h * Backdrop.FIELD_TOP + 20.0
+	var top_y := INF
+	for off in formation:
+		top_y = minf(top_y, FORMATION_ANCHOR.y + off.y)
+	var shift_y := maxf(0.0, min_y - top_y)
 	for i in comp.size():
 		var type: String = comp[i]
-		var pos: Vector2 = BOSS_POS if type == "boss" else FORMATION_ANCHOR + formation[i]
-		pos.y = maxf(pos.y, min_y)
+		var pos: Vector2 = BOSS_POS if type == "boss" else FORMATION_ANCHOR + formation[i] + Vector2(0, shift_y)
 		_add_enemy(type, pos, false)
 	_pick_hero_target()
 
@@ -250,6 +269,7 @@ func _add_enemy(type: String, pos: Vector2, taunt: bool, summoned := false) -> A
 	e.setup(stats["name"], stats, def["color"], def["shape"], def["size"], "enemy")
 	# Защита врага — по той же формуле затухания, что и у героя
 	e.def_pct = Hero.diminish(float(stats.get("def", 0)), 1.0, Hero.DEF_K)
+	e.attack_sfx = SFX_ATTACK_ENEMY.get(type)
 	e.taunt = taunt
 	e.position = pos
 	e.engaged = true
