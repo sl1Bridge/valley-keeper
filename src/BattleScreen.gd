@@ -38,6 +38,10 @@ var wave := 1
 ## Выбранная скорость боя запоминается между боями (сессия игры).
 static var persisted_speed := 1.0
 
+## Зерно генератора случайности боя; -1 — случайное (в игре).
+## Тесты задают зерно, чтобы симуляции были воспроизводимыми.
+var rng_seed := -1
+
 var _rng := RandomNumberGenerator.new()
 var _state := "fight"  # "fight" | "loot" | "done"
 var _kills := 0
@@ -63,7 +67,10 @@ var _center_label: Label
 
 
 func _ready() -> void:
-	_rng.randomize()
+	if rng_seed >= 0:
+		_rng.seed = rng_seed
+	else:
+		_rng.randomize()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(Backdrop.new())
 	_build_hud()

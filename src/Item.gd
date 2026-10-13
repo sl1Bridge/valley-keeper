@@ -18,7 +18,8 @@ const SLOT_NAMES := {"weapon": "Оружие", "shield": "Щит", "armor": "Б�
 const STAT_NAMES := {"atk": "Сила", "spd": "Ловкость", "def": "Защита", "surv": "Выносливость", "dodge": "Шанс уворота", "block": "Шанс блока"}
 const STAT_ORDER := ["atk", "spd", "def", "surv", "dodge", "block"]
 
-# Множитель силы бонусов по редкости (временные значения, уточнить по игротестам)
+# Множитель силы бонусов по редкости; применяется только к плюсам,
+# штрафы (минусы) с редкостью не растут (временные значения, уточнить по игротестам)
 const RARITY_MULT := [1.0, 1.3, 1.6, 2.0, 2.5, 3.2]
 
 # Базовые веса редкостей на 1-й волне (временные значения)
@@ -32,35 +33,42 @@ const RARITY_RICH_SHIFT := 0.5
 # Бонусы — сырые очки (ловкость и выносливость тоже в очках, не в готовых
 # значениях); уворот/блок — прямые проценты шанса.
 # Поле "class" — классовый предмет: выпадает только герою этого класса.
+# Правила пула (временные, уточнить по игротестам):
+# - большинство предметов имеет негативную сторону: сумма плюсов чуть
+#   больше, но за неё платят минусом;
+# - предметы без минусов чуть слабее по сумме очков — сила сопоставима;
+# - штрафы не растут с редкостью (на RARITY_MULT множатся только плюсы);
+# - внутри одного слота суммы плюсов различаются не больше чем на 2 очка
+#   и ни один предмет не хуже другого по всем характеристикам сразу.
 const TEMPLATES := [
-	{"name": "Ржавый меч", "slot": "weapon", "bonuses": {"atk": 3}},
-	{"name": "Топор лесника", "slot": "weapon", "bonuses": {"atk": 2, "surv": 2}},
-	{"name": "Кинжал странника", "slot": "weapon", "bonuses": {"atk": 2, "spd": 3}},
-	{"name": "Молот кузнеца", "slot": "weapon", "bonuses": {"atk": 4, "spd": -2}},
-	{"name": "Кинжал акробата", "slot": "weapon", "bonuses": {"atk": 2, "dodge": 3}, "class": "rogue"},
+	{"name": "Ржавый меч", "slot": "weapon", "bonuses": {"atk": 4}},
+	{"name": "Топор лесника", "slot": "weapon", "bonuses": {"atk": 4, "surv": 2, "spd": -1}},
+	{"name": "Кинжал странника", "slot": "weapon", "bonuses": {"atk": 2, "spd": 3, "surv": -1}},
+	{"name": "Молот кузнеца", "slot": "weapon", "bonuses": {"atk": 6, "spd": -2}},
+	{"name": "Кинжал акробата", "slot": "weapon", "bonuses": {"atk": 3, "dodge": 3, "def": -1}, "class": "rogue"},
 	{"name": "Щит ополченца", "slot": "shield", "bonuses": {"def": 2, "surv": 2}, "class": "knight"},
-	{"name": "Башенный щит", "slot": "shield", "bonuses": {"def": 3, "spd": -1}, "class": "knight"},
-	{"name": "Щит бастиона", "slot": "shield", "bonuses": {"def": 2, "block": 3}, "class": "knight"},
-	{"name": "Кожаный шлем", "slot": "helmet", "bonuses": {"def": 1, "surv": 1}},
-	{"name": "Железный шлем", "slot": "helmet", "bonuses": {"def": 2}},
+	{"name": "Башенный щит", "slot": "shield", "bonuses": {"def": 5, "spd": -2}, "class": "knight"},
+	{"name": "Щит бастиона", "slot": "shield", "bonuses": {"def": 2, "block": 3, "atk": -1}, "class": "knight"},
+	{"name": "Кожаный шлем", "slot": "helmet", "bonuses": {"def": 1, "surv": 2}},
+	{"name": "Железный шлем", "slot": "helmet", "bonuses": {"def": 4, "spd": -1}},
 	{"name": "Шлем стражника", "slot": "helmet", "bonuses": {"def": 1, "block": 2}, "class": "knight"},
 	{"name": "Капюшон тени", "slot": "helmet", "bonuses": {"spd": 1, "dodge": 2}, "class": "rogue"},
-	{"name": "Кожаная куртка", "slot": "armor", "bonuses": {"def": 1, "surv": 2}},
-	{"name": "Кольчуга", "slot": "armor", "bonuses": {"def": 2}},
-	{"name": "Плащ тени", "slot": "armor", "bonuses": {"def": 1, "spd": 2}},
-	{"name": "Плащ ускользания", "slot": "armor", "bonuses": {"def": 1, "dodge": 4}, "class": "rogue"},
-	{"name": "Старые сапоги", "slot": "boots", "bonuses": {"spd": 1, "surv": 1}},
-	{"name": "Сапоги следопыта", "slot": "boots", "bonuses": {"spd": 2}},
-	{"name": "Сапоги бастиона", "slot": "boots", "bonuses": {"surv": 2, "block": 2}, "class": "knight"},
+	{"name": "Кожаная куртка", "slot": "armor", "bonuses": {"def": 2, "surv": 2}},
+	{"name": "Кольчуга", "slot": "armor", "bonuses": {"def": 4, "spd": -1}},
+	{"name": "Плащ тени", "slot": "armor", "bonuses": {"def": 2, "spd": 3, "surv": -1}},
+	{"name": "Плащ ускользания", "slot": "armor", "bonuses": {"def": 1, "dodge": 3}, "class": "rogue"},
+	{"name": "Старые сапоги", "slot": "boots", "bonuses": {"spd": 2, "surv": 1}},
+	{"name": "Сапоги следопыта", "slot": "boots", "bonuses": {"spd": 4, "def": -1}},
+	{"name": "Сапоги бастиона", "slot": "boots", "bonuses": {"surv": 2, "block": 2, "spd": -1}, "class": "knight"},
 	{"name": "Сапоги акробата", "slot": "boots", "bonuses": {"spd": 1, "dodge": 2}, "class": "rogue"},
-	{"name": "Каменный оберег", "slot": "amulet", "bonuses": {"surv": 3}},
-	{"name": "Оберег волка", "slot": "amulet", "bonuses": {"atk": 1, "spd": 2}},
+	{"name": "Каменный оберег", "slot": "amulet", "bonuses": {"surv": 4, "spd": -1}},
+	{"name": "Оберег волка", "slot": "amulet", "bonuses": {"atk": 2, "spd": 2, "def": -1}},
 	{"name": "Солнечный медальон", "slot": "amulet", "bonuses": {"surv": 2, "def": 1}},
-	{"name": "Перо ветра", "slot": "amulet", "bonuses": {"spd": 4}},
+	{"name": "Перо ветра", "slot": "amulet", "bonuses": {"spd": 4, "surv": -1}},
 	{"name": "Кольцо жизни", "slot": "ring", "bonuses": {"surv": 3}},
-	{"name": "Кольцо клинка", "slot": "ring", "bonuses": {"atk": 2}},
-	{"name": "Кольцо прилива", "slot": "ring", "bonuses": {"surv": 2}},
-	{"name": "Кольцо стража", "slot": "ring", "bonuses": {"block": 3}, "class": "knight"},
+	{"name": "Кольцо клинка", "slot": "ring", "bonuses": {"atk": 3, "surv": -1}},
+	{"name": "Кольцо прилива", "slot": "ring", "bonuses": {"surv": 2, "spd": 1, "def": -1}},
+	{"name": "Кольцо стража", "slot": "ring", "bonuses": {"block": 3, "atk": -1}, "class": "knight"},
 ]
 
 static var _next_id := 1
@@ -125,9 +133,12 @@ static func generate(rng: RandomNumberGenerator = null, rarity: int = -1, wave: 
 	it.rarity = rarity
 	it.bonuses = {}
 	for k in t["bonuses"]:
-		var v: float = t["bonuses"][k] * mult
-		v = maxi(1, roundi(v)) if t["bonuses"][k] > 0 else mini(-1, roundi(v))
-		it.bonuses[k] = v
+		var base: float = t["bonuses"][k]
+		if base > 0:
+			it.bonuses[k] = maxi(1, roundi(base * mult))
+		else:
+			# Штрафы не растут с редкостью: чем выше редкость, тем выгоднее предмет
+			it.bonuses[k] = int(base)
 	return it
 
 

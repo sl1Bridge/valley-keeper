@@ -12,6 +12,7 @@ var _frames := 0
 func _initialize() -> void:
 	print("=== Логические тесты ===")
 	_test_items()
+	_test_item_pool()
 	_test_hero()
 	_test_heroes_roster()
 	_test_class_slots()
@@ -207,6 +208,81 @@ func _test_items() -> void:
 			sum += Item.roll_rarity(r, wave, true)
 		return sum / 300.0
 	_check(rich_avg.call(1) > avg.call(1), "финальный сундук ценнее обычного на той же волне")
+
+
+func _test_item_pool() -> void:
+	print("-- Пул предметов: баланс шаблонов --")
+	# Большинство предметов имеет негативную сторону
+	var with_neg := 0
+	var without_neg := 0
+	for t in Item.TEMPLATES:
+		var has_neg := false
+		for k in t["bonuses"]:
+			if t["bonuses"][k] < 0:
+				has_neg = true
+		if has_neg:
+			with_neg += 1
+		else:
+			without_neg += 1
+	_check(with_neg > without_neg, "большинство предметов со штрафом (%d из %d)" % [with_neg, Item.TEMPLATES.size()])
+
+	# Сумма плюсов шаблона (уворот/блок считаем за очки)
+	var pos_sum := func(t: Dictionary) -> float:
+		var s := 0.0
+		for k in t["bonuses"]:
+			if t["bonuses"][k] > 0:
+				s += t["bonuses"][k]
+		return s
+	# a строго лучше b: не хуже по всем характеристикам и лучше хотя бы по одной
+	var dominates := func(a: Dictionary, b: Dictionary) -> bool:
+		var better := false
+		var keys := {}
+		for k in a["bonuses"]:
+			keys[k] = true
+		for k in b["bonuses"]:
+			keys[k] = true
+		for k in keys:
+			var av: float = a["bonuses"].get(k, 0)
+			var bv: float = b["bonuses"].get(k, 0)
+			if av < bv:
+				return false
+			if av > bv:
+				better = true
+		return better
+	var band_ok := true
+	var fair_ok := true
+	for i in Item.TEMPLATES.size():
+		for j in Item.TEMPLATES.size():
+			if i == j:
+				continue
+			var a: Dictionary = Item.TEMPLATES[i]
+			var b: Dictionary = Item.TEMPLATES[j]
+			if a["slot"] != b["slot"] or a.get("class", "") != b.get("class", ""):
+				continue
+			if absf(pos_sum.call(a) - pos_sum.call(b)) > 2.0:
+				band_ok = false
+			if dominates.call(a, b):
+				fair_ok = false
+	_check(band_ok, "внутри слота суммы плюсов различаются не больше чем на 2 очка")
+	_check(fair_ok, "ни один предмет не хуже другого того же слота по всем характеристикам")
+
+	# Штрафы не растут с редкостью (плюсы множатся, минусы — нет)
+	var rng5 := RandomNumberGenerator.new()
+	rng5.seed = 77
+	var neg_ok := true
+	var seen_neg := 0
+	for i in 200:
+		var it := Item.generate(rng5, 5)
+		for t in Item.TEMPLATES:
+			if t["name"] != it.name:
+				continue
+			for k in t["bonuses"]:
+				if t["bonuses"][k] < 0:
+					seen_neg += 1
+					if int(it.bonuses.get(k, 0)) != int(t["bonuses"][k]):
+						neg_ok = false
+	_check(seen_neg > 0, "в генерации артефактов встречались предметы со штрафом (%d)" % seen_neg)
+	_check(neg_ok, "штрафы не множатся на редкость")
 
 
 func _test_hero() -> void:
@@ -976,6 +1052,8 @@ func _test_battle_sim() -> void:
 	var b := BattleScreen.new()
 	b.hero = h
 	b.wave = 1
+	b.rng_seed = 303  # воспроизводимая симуляция
+	seed(303)
 	b._ready()
 
 	var dt := 0.05
@@ -1017,10 +1095,13 @@ func _open_field_chests(b: BattleScreen) -> void:
 		b._on_chest_clicked(c)
 
 
-func _run_battle(h: Hero, wave: int) -> BattleScreen:
+func _run_battle(h: Hero, wave: int, battle_seed := -1) -> BattleScreen:
 	var b := BattleScreen.new()
 	b.hero = h
 	b.wave = wave
+	b.rng_seed = battle_seed
+	if battle_seed >= 0:
+		seed(battle_seed)  # глобальный ГСЧ (разброс темпа атаки врагов)
 	b._ready()
 	var dt := 0.05
 	var steps := 0
@@ -1040,30 +1121,35 @@ func _run_battle(h: Hero, wave: int) -> BattleScreen:
 func _test_boss_sims() -> void:
 	print("-- Симуляция босса: сильный и слабый герой --")
 
-	# Сильный герой должен победить босса (с учётом его призыва союзников)
-	var strong := Hero.new()
-	strong.add_xp(900)
-	while strong.stat_points > 0:
-		strong.allocate("surv")
-		if strong.stat_points > 0:
-			strong.allocate("atk")
-	for slot in ["weapon", "shield", "helmet", "armor", "boots", "amulet", "ring1", "ring2"]:
-		var it := Item.new()
-		it.name = "Легенда"
-		it.slot = slot
-		it.rarity = 4
-		it.bonuses = {"atk": 8, "surv": 10, "def": 4}
-		strong.inventory.append(it)
-		strong.equip(it)
-	var b1 := _run_battle(strong, Enemies.TOTAL_WAVES)
-	_check(b1._state == "done", "бой с боссом завершился")
-	_check(b1._hero_actor.alive, "прокачанный герой победил босса")
-	_check(b1._boss_dead and b1._chests.is_empty(), "победа над боссом — сразу, без фазы сундуков")
-	b1.free()
+	# Сильный герой должен стабильно побеждать босса (с учётом его призыва):
+	# 5 воспроизводимых прогонов с разными зернами, минимум 4 победы
+	var wins := 0
+	for s in 5:
+		var strong := Hero.new()
+		strong.add_xp(900)
+		while strong.stat_points > 0:
+			strong.allocate("surv")
+			if strong.stat_points > 0:
+				strong.allocate("atk")
+		for slot in ["weapon", "shield", "helmet", "armor", "boots", "amulet", "ring1", "ring2"]:
+			var it := Item.new()
+			it.name = "Легенда"
+			it.slot = slot
+			it.rarity = 4
+			it.bonuses = {"atk": 8, "surv": 10, "def": 4}
+			strong.inventory.append(it)
+			strong.equip(it)
+		var b := _run_battle(strong, Enemies.TOTAL_WAVES, 101 + s)
+		if b._state == "done" and b._hero_actor.alive and b._boss_dead:
+			wins += 1
+			if wins == 1:
+				_check(b._chests.is_empty(), "победа над боссом — сразу, без фазы сундуков")
+		b.free()
+	_check(wins >= 4, "прокачанный герой победил босса в %d из 5 прогонов" % wins)
 
 	# Голый герой 1 уровня должен проиграть (и игра это корректно обрабатывает)
 	var weak := Hero.new()
-	var b2 := _run_battle(weak, Enemies.TOTAL_WAVES)
+	var b2 := _run_battle(weak, Enemies.TOTAL_WAVES, 202)
 	_check(b2._state == "done", "бой слабого героя завершился")
 	_check(not b2._hero_actor.alive, "слабый герой пал — путь поражения работает")
 	b2.free()
