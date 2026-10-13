@@ -16,7 +16,7 @@ const TYPES := {
 		"color": Color(0.55, 0.55, 0.62), "shape": "triangle", "size": 30.0, "move": 115.0,
 	},
 	"golem": {
-		"name": "Голем", "hp": 36, "atk": 5, "def": 3, "spd": 0.5, "xp": 8,
+		"name": "Голем", "hp": 48, "atk": 7, "def": 4, "spd": 0.5, "xp": 10,
 		"color": Color(0.6, 0.45, 0.3), "shape": "rect", "size": 42.0, "move": 40.0,
 	},
 	"boss": {
@@ -118,7 +118,7 @@ const STUN_DURATION := {"golem": 0.5, "boss": 1.2}
 ## У всех призванных — свойство «Провокация»: герой атакует их в первую
 ## очередь. Призванные не дают опыта и не оставляют сундуков.
 ## (временные значения, уточнить по игротестам)
-const SUMMON_INTERVAL := 6.0   # секунд между призывами
+const SUMMON_INTERVAL := 5.0   # секунд между призывами
 const SUMMON_VALUE := 4        # бюджет одного призыва (последний может округлить вверх)
 const SUMMON_MAX_ACTIVE := 3   # максимум живых призванных одновременно
 const SUMMON_POOL := ["slime", "wolf", "golem"]  # кого может призвать босс
@@ -143,7 +143,7 @@ static func effect_desc(type: String) -> String:
 		"slime":
 			return "Отравление (%d%% при атаке): −%d%% к характеристикам за стак, %d с" % [roundi(POISON_CHANCE * 100.0), roundi(Hero.POISON_PER_STACK), roundi(Hero.POISON_DURATION)]
 		"wolf":
-			return "Кровотечение (%d%% при атаке): −%d HP/с за стак, %d с" % [roundi(BLEED_CHANCE * 100.0), roundi(Hero.BLEED_DPS), roundi(Hero.BLEED_DURATION)]
+			return "Кровотечение (%d%% при атаке): −%d HP/с за стак, %d с; стаки складываются с затуханием" % [roundi(BLEED_CHANCE * 100.0), roundi(Hero.BLEED_DPS), roundi(Hero.BLEED_DURATION)]
 		"golem":
 			return "Оглушение (%d%% при атаке): герой не атакует %.1f с" % [roundi(STUN_CHANCE["golem"] * 100.0), STUN_DURATION["golem"]]
 		"boss":

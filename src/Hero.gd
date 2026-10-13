@@ -95,9 +95,12 @@ const POISON_PER_STACK := 5.0   # первый стак снижает хара�
 const POISON_STACK_DECAY := 0.6 # каждый следующий стак добавляет ×0.6 от предыдущего
 
 # Кровотечение (статусный эффект): урон в секунду за стак, у каждого стака
-# свой таймер; стаки складываются линейно (временные значения)
+# свой таймер. Стаки складываются с затуханием (как у отравления): базовый
+# стак неизменен, но каждый следующий добавляет ×BLEED_STACK_DECAY
+# (временные значения)
 const BLEED_DURATION := 3.0  # секунд на стак
 const BLEED_DPS := 2.0       # HP/с за один стак
+const BLEED_STACK_DECAY := 0.6  # каждый следующий стак добавляет ×0.6 от предыдущего
 
 var level := 1
 var xp := 0
@@ -218,9 +221,13 @@ static func poison_pct(stacks: int) -> float:
 	return POISON_PER_STACK / 100.0 * (1.0 - pow(POISON_STACK_DECAY, stacks)) / (1.0 - POISON_STACK_DECAY)
 
 
-## Суммарный урон кровотечения в секунду (стаки складываются линейно).
+## Суммарный урон кровотечения в секунду: база стака неизменна, но стаки
+## складываются с затуханием — каждый следующий добавляет ×BLEED_STACK_DECAY
+## от предыдущего (1 стак = 2 HP/с, 2 = 3.2, 3 = 3.92, предел ~5 HP/с).
 static func bleed_dps(stacks: int) -> float:
-	return BLEED_DPS * maxi(0, stacks)
+	if stacks <= 0:
+		return 0.0
+	return BLEED_DPS * (1.0 - pow(BLEED_STACK_DECAY, stacks)) / (1.0 - BLEED_STACK_DECAY)
 
 
 ## Сколько опыта нужно для следующего уровня.

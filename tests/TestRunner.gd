@@ -761,11 +761,16 @@ func _test_bleed_stun() -> void:
 	a.add_bleed()
 	a.add_bleed()
 	_check(a.bleed_times.size() == 2, "кровотечение стакается")
+	# Затухание стаков: база неизменна, каждый следующий стак добавляет меньше
+	_check(absf(Hero.bleed_dps(1) - Hero.BLEED_DPS) < 0.001, "один стак — полные %d HP/с (база не изменилась)" % roundi(Hero.BLEED_DPS))
+	_check(absf(Hero.bleed_dps(2) - 3.2) < 0.001, "2 стака — 3.2 HP/с (было 4 при линейном сложении)")
+	_check(Hero.bleed_dps(3) - Hero.bleed_dps(2) < Hero.bleed_dps(2) - Hero.bleed_dps(1), "прирост от каждого следующего стака затухает")
+	_check(Hero.bleed_dps(0) == 0.0, "без стаков урона нет")
 	_check(a._badges["bleed"].visible and a._badges["bleed"].stacks == 2, "значок кровотечения показывает 2 стака")
 	_check("HP/с" in a._badges["bleed"].tooltip_text, "в подсказке кровотечения — урон в секунду")
 	var hp0: float = a.hp
 	a.step(1.0)
-	_check(absf(a.hp - (hp0 - Hero.bleed_dps(2) * 1.0)) < 0.01, "2 стака кровотечения: −%d HP/с мимо уворота" % roundi(Hero.bleed_dps(2)))
+	_check(absf(a.hp - (hp0 - floorf(Hero.bleed_dps(2)))) < 0.01, "2 стака кровотечения: −%d HP/с мимо уворота (урон капает целыми HP)" % floori(Hero.bleed_dps(2)))
 	a.step(10.0)
 	_check(a.bleed_times.is_empty(), "стаки кровотечения истекли")
 	_check(not a._badges["bleed"].visible, "значок кровотечения скрыт без стаков")
@@ -797,6 +802,7 @@ func _test_bleed_stun() -> void:
 
 	# У голема и босса стан прописан, у босса сильнее; у слизня и волка стана нет
 	_check(Enemies.STUN_CHANCE.has("golem") and Enemies.STUN_CHANCE.has("boss"), "стан накладывают голем и босс")
+	_check(int(Enemies.TYPES["golem"]["hp"]) > 36 and int(Enemies.TYPES["golem"]["atk"]) > 5, "голем усилен (было 36 HP и 5 атаки, теперь %d HP и %d)" % [int(Enemies.TYPES["golem"]["hp"]), int(Enemies.TYPES["golem"]["atk"])])
 	_check(Enemies.STUN_CHANCE["boss"] > Enemies.STUN_CHANCE["golem"], "у босса шанс стана выше")
 	_check(Enemies.STUN_DURATION["boss"] > Enemies.STUN_DURATION["golem"], "у босса стан дольше")
 	_check(not Enemies.STUN_CHANCE.has("slime") and not Enemies.STUN_CHANCE.has("wolf"), "слизень и волк стан не накладывают")
@@ -862,6 +868,7 @@ func _test_enemy_tooltip() -> void:
 func _test_summon_taunt() -> void:
 	print("-- Умение босса: призыв и провокация --")
 	_check(Enemies.SUMMON_INTERVAL > 0.0, "у призыва задан интервал")
+	_check(Enemies.SUMMON_INTERVAL < 6.0, "босс призывает чаще, чем раньше (интервал %d с)" % roundi(Enemies.SUMMON_INTERVAL))
 	_check(Enemies.SUMMON_VALUE > 0, "у призыва задан бюджет (ценность комбинации)")
 	_check(int(Enemies.TYPES["boss"]["hp"]) > 110, "здоровье босса увеличено (было 110, теперь %d)" % int(Enemies.TYPES["boss"]["hp"]))
 	_check("Призыв" in Enemies.ability_desc("boss"), "у босса описано умение призыва")
@@ -917,6 +924,7 @@ func _test_summon_taunt() -> void:
 	b._on_enemy_died(summons[0])
 	_check(h.xp == xp_before and h.level == lvl_before, "призванные не дают опыта")
 	_check(b._chests.size() == chests_before, "призванные не оставляют сундуков")
+	_check(not summons[0].visible, "труп призванного пропадает сразу")
 
 	# Пока жив хоть один провоцирующий — герой не бьёт босса
 	for i in range(1, summons.size()):
@@ -1122,21 +1130,25 @@ func _test_boss_sims() -> void:
 	print("-- Симуляция босса: сильный и слабый герой --")
 
 	# Сильный герой должен стабильно побеждать босса (с учётом его призыва):
-	# 5 воспроизводимых прогонов с разными зернами, минимум 4 победы
+	# 5 воспроизводимых прогонов с разными зернами, минимум 4 победы.
+	# Сборка — разумная, а не «всё в две характеристики»: после капов наивный
+	# стакинг проигрывает боссу всегда (замер scratch-симуляцией, 0/10),
+	# равномерная прокачка со смешанным шмотом побеждает (10/10).
 	var wins := 0
 	for s in 5:
 		var strong := Hero.new()
 		strong.add_xp(900)
+		var order := ["surv", "atk", "def", "spd"]
+		var i := 0
 		while strong.stat_points > 0:
-			strong.allocate("surv")
-			if strong.stat_points > 0:
-				strong.allocate("atk")
+			strong.allocate(order[i % 4])
+			i += 1
 		for slot in ["weapon", "shield", "helmet", "armor", "boots", "amulet", "ring1", "ring2"]:
 			var it := Item.new()
 			it.name = "Легенда"
 			it.slot = slot
 			it.rarity = 4
-			it.bonuses = {"atk": 8, "surv": 10, "def": 4}
+			it.bonuses = {"atk": 5, "spd": 3, "def": 4, "surv": 5}
 			strong.inventory.append(it)
 			strong.equip(it)
 		var b := _run_battle(strong, Enemies.TOTAL_WAVES, 101 + s)

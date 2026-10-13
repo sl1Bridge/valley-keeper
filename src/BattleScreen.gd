@@ -337,6 +337,9 @@ func _on_enemy_died(e: Actor) -> void:
 	var is_boss: bool = e.stats.get("type", "") == "boss"
 	# Призванные боссом не дают ни опыта, ни сундуков
 	var is_summoned: bool = e.stats.get("summoned", false)
+	# Трупы призванных пропадают сразу — союзники босса рассеиваются
+	if is_summoned:
+		e.visible = false
 
 	# Опыт и уровни
 	if not is_summoned:
