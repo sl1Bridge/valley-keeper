@@ -9,6 +9,7 @@ signal damaged(actor, amount)
 signal attacked(attacker, target)
 signal evaded(actor)
 signal poisoned  # состав стаков отравления изменился (добавлен или истёк)
+signal cast_ready(actor)  # умение заряжено (таймер дошёл до конца)
 
 var display_name := ""
 var team := "enemy"  # "hero" или "enemy"
@@ -23,6 +24,9 @@ var evasion_label := "Уворот!"  # текст всплывающей над
 var poison_times: Array = []
 var bleed_times: Array = []
 var stun_left := 0.0   # оставшееся время оглушения (0 — нет); не стакается
+var taunt := false     # провокация: герой атакует этого врага в первую очередь
+var cast_interval := 0.0  # период умения в секундах (0 — умения нет)
+var cast_timer := 0.0     # накопленное время до готовности умения
 var body_color := Color.WHITE
 var shape := "rect"  # "rect" | "circle" | "triangle"
 var radius := 30.0
@@ -134,6 +138,13 @@ func step(delta: float) -> void:
 	if alive and engaged and regen > 0.0 and hp < max_hp:
 		hp = minf(max_hp, hp + regen * delta)
 		queue_redraw()
+	# Умение: копится заряд, по заполнении — сигнал (обрабатывает экран боя)
+	if alive and engaged and cast_interval > 0.0:
+		cast_timer += delta
+		queue_redraw()  # прогресс-бар умения
+		if cast_timer >= cast_interval:
+			cast_timer = 0.0
+			cast_ready.emit(self)
 	if not alive or not engaged or stun_left > 0.0 or target == null or not target.alive:
 		return
 	_atk_timer += delta
@@ -249,6 +260,8 @@ func _draw() -> void:
 			draw_rect(Rect2(off - Vector2(radius, radius), Vector2(radius * 2.0, radius * 2.0)), c)
 	if alive:
 		_draw_hp_bar()
+		_draw_cast_bar()
+		_draw_taunt_flag()
 
 
 func _draw_hp_bar() -> void:
@@ -258,6 +271,33 @@ func _draw_hp_bar() -> void:
 	draw_rect(Rect2(-radius, y, w, h), Color(0.12, 0.12, 0.14))
 	var fill := Color(0.35, 0.85, 0.4) if team == "hero" else Color(0.9, 0.32, 0.32)
 	draw_rect(Rect2(-radius, y, w * hp_fraction(), h), fill)
+
+
+## Прогресс-бар умения над полосой HP: заполняется к готовности, потом сгорает.
+func _draw_cast_bar() -> void:
+	if cast_interval <= 0.0:
+		return
+	var w := radius * 2.0
+	var y := -radius * 2.0 - 29.0
+	draw_rect(Rect2(-radius, y, w, 5.0), Color(0.12, 0.12, 0.14))
+	var frac := clampf(cast_timer / cast_interval, 0.0, 1.0)
+	draw_rect(Rect2(-radius, y, w * frac, 5.0), Color(0.72, 0.5, 0.95))
+
+
+## Иконка провокации: красный флажок справа над головой —
+## герой атакует этого врага в первую очередь.
+func _draw_taunt_flag() -> void:
+	if not taunt:
+		return
+	var fx := radius * 0.8
+	var fy := -radius * 2.0 - 8.0
+	var red := Color(0.9, 0.22, 0.22)
+	draw_line(Vector2(fx, fy), Vector2(fx, fy - 22.0), red, 2.5)
+	draw_colored_polygon(PackedVector2Array([
+		Vector2(fx, fy - 22.0),
+		Vector2(fx + 14.0, fy - 17.0),
+		Vector2(fx, fy - 12.0),
+	]), red)
 
 
 ## Значок статусного эффекта над головой бойца: иконка по виду эффекта,

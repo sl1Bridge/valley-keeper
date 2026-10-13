@@ -187,37 +187,71 @@ func _spawn_enemies() -> void:
 	var formation: Array = FORMATIONS[mini(comp.size(), Enemies.MAX_ENEMIES)]
 	for i in comp.size():
 		var type: String = comp[i]
-		var stats := Enemies.scaled(type, wave)
-		var def: Dictionary = Enemies.TYPES[type]
-		var e := Actor.new()
-		e.setup(stats["name"], stats, def["color"], def["shape"], def["size"], "enemy")
-		# Защита врага — по той же формуле затухания, что и у героя
-		e.def_pct = Hero.diminish(float(stats.get("def", 0)), 1.0, Hero.DEF_K)
-		if type == "boss":
-			e.position = BOSS_POS
-		else:
-			e.position = FORMATION_ANCHOR + formation[i]
-		e.engaged = true
-		e.target = _hero_actor
-		e.died.connect(_on_enemy_died)
-		e.damaged.connect(_on_actor_damaged)
-		e.attacked.connect(_on_actor_attacked)
-		e.evaded.connect(_on_actor_evaded)
-		# Зона наведения: подсказка с характеристиками врага и его эффектом
-		var hover := Control.new()
-		hover.position = Vector2(-e.radius, -e.radius * 2.0)
-		hover.size = Vector2(e.radius * 2.0, e.radius * 2.0)
-		hover.mouse_filter = Control.MOUSE_FILTER_PASS
-		hover.tooltip_text = _enemy_tooltip(type, stats)
-		e.add_child(hover)
-		_world.add_child(e)
-		_enemies.append(e)
+		var pos: Vector2 = BOSS_POS if type == "boss" else FORMATION_ANCHOR + formation[i]
+		_add_enemy(type, pos, false)
 	_pick_hero_target()
 
 
-## Подсказка при наведении на врага: характеристики и эффект,
-## который он может наложить на героя (если есть).
-func _enemy_tooltip(type: String, stats: Dictionary) -> String:
+## Создать врага на поле боя: внешность, сигналы, подсказка при наведении.
+## taunt — свойство «Провокация»: герой атакует такого врага в первую очередь.
+func _add_enemy(type: String, pos: Vector2, taunt: bool) -> Actor:
+	var stats := Enemies.scaled(type, wave)
+	var def: Dictionary = Enemies.TYPES[type]
+	var e := Actor.new()
+	e.setup(stats["name"], stats, def["color"], def["shape"], def["size"], "enemy")
+	# Защита врага — по той же формуле затухания, что и у героя
+	e.def_pct = Hero.diminish(float(stats.get("def", 0)), 1.0, Hero.DEF_K)
+	e.taunt = taunt
+	e.position = pos
+	e.engaged = true
+	e.target = _hero_actor
+	e.died.connect(_on_enemy_died)
+	e.damaged.connect(_on_actor_damaged)
+	e.attacked.connect(_on_actor_attacked)
+	e.evaded.connect(_on_actor_evaded)
+	if type == "boss":
+		# Умение босса: призыв союзников с провокацией (прогресс-бар над боссом)
+		e.cast_interval = Enemies.SUMMON_INTERVAL
+		e.cast_ready.connect(_on_boss_cast)
+	# Зона наведения: подсказка с характеристиками, эффектами, умениями и свойствами
+	var hover := Control.new()
+	hover.position = Vector2(-e.radius, -e.radius * 2.0)
+	hover.size = Vector2(e.radius * 2.0, e.radius * 2.0)
+	hover.mouse_filter = Control.MOUSE_FILTER_PASS
+	hover.tooltip_text = _enemy_tooltip(type, stats, taunt)
+	e.add_child(hover)
+	_world.add_child(e)
+	_enemies.append(e)
+	return e
+
+
+## Умение босса «Призыв»: несколько случайных союзников со свойством
+## «Провокация» рядом с боссом. Герой переключается на них, пока они живы.
+func _on_boss_cast(boss: Actor) -> void:
+	if _state != "fight" or not boss.alive:
+		return
+	var active := 0
+	for e in _enemies:
+		if e.alive and e.taunt:
+			active += 1
+	var count := mini(Enemies.SUMMON_COUNT, Enemies.SUMMON_MAX_ACTIVE - active)
+	if count <= 0:
+		return
+	var offsets := [Vector2(-80, -70), Vector2(-100, 20), Vector2(-70, 100)]
+	for i in count:
+		var type: String = Enemies.SUMMON_POOL[_rng.randi() % Enemies.SUMMON_POOL.size()]
+		_add_enemy(type, boss.position + offsets[i % offsets.size()], true)
+		_enemy_total += 1  # призванные тоже считаются врагами волны
+	_spawn_popup("Призыв!", boss.position + Vector2(-40, -boss.radius * 2.0 - 70), Color(0.72, 0.5, 0.95), 20)
+	_update_hud()
+	# Провокация: герой бьёт призванных в приоритете, босс — только когда они мертвы
+	if _hero_actor.target == null or not _hero_actor.target.taunt:
+		_pick_hero_target()
+
+
+## Подсказка при наведении на врага: характеристики, эффекты,
+## умения и свойства (провокация).
+func _enemy_tooltip(type: String, stats: Dictionary, taunt := false) -> String:
 	var def_pct := Hero.diminish(float(stats.get("def", 0)), 1.0, Hero.DEF_K)
 	var lines := PackedStringArray()
 	lines.append(str(stats["name"]))
@@ -226,10 +260,16 @@ func _enemy_tooltip(type: String, stats: Dictionary) -> String:
 	var eff := Enemies.effect_desc(type)
 	if eff != "":
 		lines.append("Может наложить: " + eff)
+	var ability := Enemies.ability_desc(type)
+	if ability != "":
+		lines.append("Умение: " + ability)
+	if taunt:
+		lines.append("Провокация: герой атакует этого врага в первую очередь")
 	return "\n".join(lines)
 
 
 ## Герой выбирает случайную живую цель.
+## Враги с провокацией — в приоритете: пока они живы, других герой не бьёт.
 func _pick_hero_target() -> void:
 	var alive := []
 	for e in _enemies:
@@ -239,7 +279,12 @@ func _pick_hero_target() -> void:
 		_hero_actor.target = null
 		_hero_actor.engaged = false
 	else:
-		_hero_actor.target = alive[_rng.randi_range(0, alive.size() - 1)]
+		var taunters := []
+		for e in alive:
+			if e.taunt:
+				taunters.append(e)
+		var pool := taunters if not taunters.is_empty() else alive
+		_hero_actor.target = pool[_rng.randi_range(0, pool.size() - 1)]
 		_hero_actor.engaged = true
 
 

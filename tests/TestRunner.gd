@@ -23,6 +23,7 @@ func _initialize() -> void:
 	_test_poison()
 	_test_bleed_stun()
 	_test_enemy_tooltip()
+	_test_summon_taunt()
 	_test_chests_heal_speed()
 	_test_battle_sim()
 	_test_boss_sims()
@@ -771,6 +772,68 @@ func _test_enemy_tooltip() -> void:
 	b.free()
 
 
+func _test_summon_taunt() -> void:
+	print("-- Умение босса: призыв и провокация --")
+	_check(Enemies.SUMMON_INTERVAL > 0.0, "у призыва задан интервал")
+	_check(Enemies.SUMMON_COUNT >= 1 and Enemies.SUMMON_COUNT <= Enemies.SUMMON_MAX_ACTIVE, "размер призыва в пределах лимита")
+	_check(int(Enemies.TYPES["boss"]["hp"]) > 110, "здоровье босса увеличено (было 110, теперь %d)" % int(Enemies.TYPES["boss"]["hp"]))
+	_check("Призыв" in Enemies.ability_desc("boss"), "у босса описано умение призыва")
+	_check(Enemies.ability_desc("slime") == "", "у обычных врагов умения нет")
+
+	var h := Hero.new()
+	var b := BattleScreen.new()
+	b.hero = h
+	b.wave = Enemies.TOTAL_WAVES
+	b._ready()
+	_check(b._enemies.size() == 1, "волна босса начинается с одного босса")
+	var boss: Actor = b._enemies[0]
+	_check(boss.cast_interval == Enemies.SUMMON_INTERVAL, "у босса задан интервал умения (прогресс-бар)")
+	_check(not boss.taunt, "у самого босса провокации нет")
+
+	# Прогресс-бар заполняется: по готовности босс призывает союзников
+	boss.step(Enemies.SUMMON_INTERVAL + 0.1)
+	_check(b._enemies.size() == 1 + Enemies.SUMMON_COUNT, "босс призвал %d союзников" % Enemies.SUMMON_COUNT)
+	_check(b._enemy_total == 1 + Enemies.SUMMON_COUNT, "призванные считаются врагами волны")
+	_check(boss.cast_timer < 1.0, "после призыва прогресс умения сброшен")
+
+	var summons := []
+	for e in b._enemies:
+		if e != boss:
+			summons.append(e)
+	var all_taunt := true
+	for s in summons:
+		if not s.taunt:
+			all_taunt = false
+	_check(all_taunt, "все призванные — с провокацией")
+	_check(b._hero_actor.target != null and b._hero_actor.target.taunt, "герой переключился на призванных (провокация)")
+
+	# В подсказке призванного указана провокация
+	var tip_found := false
+	for c in summons[0].get_children():
+		if c is Control and "Провокация" in c.tooltip_text:
+			tip_found = true
+	_check(tip_found, "в подсказке призванного врага есть провокация")
+
+	# Пока жив хоть один провоцирующий — герой не бьёт босса
+	summons[0].alive = false
+	b._on_enemy_died(summons[0])
+	_check(b._hero_actor.target.taunt, "пока жив второй призванный — герой бьёт его")
+	summons[1].alive = false
+	b._on_enemy_died(summons[1])
+	_check(b._hero_actor.target == boss, "когда призванные мертвы — герой снова бьёт босса")
+
+	# Лимит живых призванных: повторные призывы не плодят толпу
+	boss.cast_timer = 0.0
+	boss.step(Enemies.SUMMON_INTERVAL + 0.1)  # +2 (всего 2 живых)
+	boss.step(Enemies.SUMMON_INTERVAL + 0.1)  # +1 (лимит 3)
+	var active := 0
+	for e in b._enemies:
+		if e.alive and e.taunt:
+			active += 1
+	_check(active == Enemies.SUMMON_MAX_ACTIVE, "живых призванных не больше %d" % Enemies.SUMMON_MAX_ACTIVE)
+	b.free()
+
+
 func _test_chests_heal_speed() -> void:
 	print("-- Сундуки, лечение при уровне, скорость боя --")
 	var h := Hero.new()
@@ -900,14 +963,14 @@ func _run_battle(h: Hero, wave: int) -> BattleScreen:
 func _test_boss_sims() -> void:
 	print("-- Симуляция босса: сильный и слабый герой --")
 
-	# Сильный герой должен победить босса
+	# Сильный герой должен победить босса (с учётом его призыва союзников)
 	var strong := Hero.new()
-	strong.add_xp(600)
+	strong.add_xp(900)
 	while strong.stat_points > 0:
 		strong.allocate("surv")
 		if strong.stat_points > 0:
 			strong.allocate("atk")
-	for slot in ["weapon", "armor", "amulet"]:
+	for slot in ["weapon", "shield", "helmet", "armor", "boots", "amulet", "ring1", "ring2"]:
 		var it := Item.new()
 		it.name = "Легенда"
 		it.slot = slot
