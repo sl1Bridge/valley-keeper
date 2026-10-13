@@ -194,8 +194,10 @@ func _spawn_enemies() -> void:
 
 ## Создать врага на поле боя: внешность, сигналы, подсказка при наведении.
 ## taunt — свойство «Провокация»: герой атакует такого врага в первую очередь.
-func _add_enemy(type: String, pos: Vector2, taunt: bool) -> Actor:
+## summoned — призван боссом: не даёт опыта и не оставляет сундуков.
+func _add_enemy(type: String, pos: Vector2, taunt: bool, summoned := false) -> Actor:
 	var stats := Enemies.scaled(type, wave)
+	stats["summoned"] = summoned
 	var def: Dictionary = Enemies.TYPES[type]
 	var e := Actor.new()
 	e.setup(stats["name"], stats, def["color"], def["shape"], def["size"], "enemy")
@@ -225,8 +227,9 @@ func _add_enemy(type: String, pos: Vector2, taunt: bool) -> Actor:
 	return e
 
 
-## Умение босса «Призыв»: несколько случайных союзников со свойством
-## «Провокация» рядом с боссом. Герой переключается на них, пока они живы.
+## Умение босса «Призыв»: случайная комбинация союзников на сумму бюджета
+## призыва (цены — Enemies.VALUES, последний может округлить сумму вверх).
+## У всех — свойство «Провокация»: герой переключается на них, пока они живы.
 func _on_boss_cast(boss: Actor) -> void:
 	if _state != "fight" or not boss.alive:
 		return
@@ -234,14 +237,18 @@ func _on_boss_cast(boss: Actor) -> void:
 	for e in _enemies:
 		if e.alive and e.taunt:
 			active += 1
-	var count := mini(Enemies.SUMMON_COUNT, Enemies.SUMMON_MAX_ACTIVE - active)
-	if count <= 0:
+	var slots: int = Enemies.SUMMON_MAX_ACTIVE - active
+	if slots <= 0:
 		return
+	var spent := 0
+	var i := 0
 	var offsets := [Vector2(-80, -70), Vector2(-100, 20), Vector2(-70, 100)]
-	for i in count:
+	while spent < Enemies.SUMMON_VALUE and i < slots:
 		var type: String = Enemies.SUMMON_POOL[_rng.randi() % Enemies.SUMMON_POOL.size()]
-		_add_enemy(type, boss.position + offsets[i % offsets.size()], true)
+		spent += Enemies.VALUES[type]
+		_add_enemy(type, boss.position + offsets[i % offsets.size()], true, true)
 		_enemy_total += 1  # призванные тоже считаются врагами волны
+		i += 1
 	_spawn_popup("Призыв!", boss.position + Vector2(-40, -boss.radius * 2.0 - 70), Color(0.72, 0.5, 0.95), 20)
 	_update_hud()
 	# Провокация: герой бьёт призванных в приоритете, босс — только когда они мертвы
@@ -265,6 +272,8 @@ func _enemy_tooltip(type: String, stats: Dictionary, taunt := false) -> String:
 		lines.append("Умение: " + ability)
 	if taunt:
 		lines.append("Провокация: герой атакует этого врага в первую очередь")
+	if stats.get("summoned", false):
+		lines.append("Призван боссом: не даёт опыта и сундуков")
 	return "\n".join(lines)
 
 
@@ -318,22 +327,25 @@ func _on_enemy_died(e: Actor) -> void:
 		if c is Control:
 			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var is_boss: bool = e.stats.get("type", "") == "boss"
+	# Призванные боссом не дают ни опыта, ни сундуков
+	var is_summoned: bool = e.stats.get("summoned", false)
 
 	# Опыт и уровни
-	var xp: int = int(e.stats.get("xp", 1))
-	var levels := hero.add_xp(xp)
-	_spawn_popup("+%d опыта" % xp, e.position + Vector2(-30, -e.radius * 2.0 - 40), Color(0.95, 0.9, 0.4), 18)
-	if levels > 0:
-		# Новый уровень: характеристики пересчитываются, герой лечится на часть от максимума
-		_hero_actor.stats = _hero_battle_stats()
-		_hero_actor.max_hp = int(_hero_actor.stats["hp"])
-		var healed: float = _hero_actor.max_hp * Hero.LEVEL_UP_HEAL
-		_hero_actor.hp = minf(_hero_actor.max_hp, _hero_actor.hp + healed)
-		_hero_actor.queue_redraw()
-		_spawn_popup("Уровень %d! +%d HP, +%d очко характеристик" % [hero.level, int(healed), Hero.POINTS_PER_LEVEL], _hero_actor.position + Vector2(-160, -_hero_actor.radius * 2.0 - 70), Color(0.5, 1.0, 0.6), 24)
+	if not is_summoned:
+		var xp: int = int(e.stats.get("xp", 1))
+		var levels := hero.add_xp(xp)
+		_spawn_popup("+%d опыта" % xp, e.position + Vector2(-30, -e.radius * 2.0 - 40), Color(0.95, 0.9, 0.4), 18)
+		if levels > 0:
+			# Новый уровень: характеристики пересчитываются, герой лечится на часть от максимума
+			_hero_actor.stats = _hero_battle_stats()
+			_hero_actor.max_hp = int(_hero_actor.stats["hp"])
+			var healed: float = _hero_actor.max_hp * Hero.LEVEL_UP_HEAL
+			_hero_actor.hp = minf(_hero_actor.max_hp, _hero_actor.hp + healed)
+			_hero_actor.queue_redraw()
+			_spawn_popup("Уровень %d! +%d HP, +%d очко характеристик" % [hero.level, int(healed), Hero.POINTS_PER_LEVEL], _hero_actor.position + Vector2(-160, -_hero_actor.radius * 2.0 - 70), Color(0.5, 1.0, 0.6), 24)
 
-	# Шанс сундука с врага (с босса сундуки не падают — победа сразу)
-	if not is_boss and _rng.randf() < Enemies.CHEST_DROP_CHANCE:
+	# Шанс сундука с врага (с босса и призванных сундуки не падают)
+	if not is_boss and not is_summoned and _rng.randf() < Enemies.CHEST_DROP_CHANCE:
 		_spawn_chest(e.position, false)
 		_spawn_popup("Выпал сундук!", e.position + Vector2(-30, -e.radius * 2.0 - 75), Color(0.95, 0.8, 0.3), 20)
 

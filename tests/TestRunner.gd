@@ -24,6 +24,7 @@ func _initialize() -> void:
 	_test_bleed_stun()
 	_test_enemy_tooltip()
 	_test_summon_taunt()
+	_test_attack_jitter()
 	_test_chests_heal_speed()
 	_test_battle_sim()
 	_test_boss_sims()
@@ -775,7 +776,7 @@ func _test_enemy_tooltip() -> void:
 func _test_summon_taunt() -> void:
 	print("-- Умение босса: призыв и провокация --")
 	_check(Enemies.SUMMON_INTERVAL > 0.0, "у призыва задан интервал")
-	_check(Enemies.SUMMON_COUNT >= 1 and Enemies.SUMMON_COUNT <= Enemies.SUMMON_MAX_ACTIVE, "размер призыва в пределах лимита")
+	_check(Enemies.SUMMON_VALUE > 0, "у призыва задан бюджет (ценность комбинации)")
 	_check(int(Enemies.TYPES["boss"]["hp"]) > 110, "здоровье босса увеличено (было 110, теперь %d)" % int(Enemies.TYPES["boss"]["hp"]))
 	_check("Призыв" in Enemies.ability_desc("boss"), "у босса описано умение призыва")
 	_check(Enemies.ability_desc("slime") == "", "у обычных врагов умения нет")
@@ -786,20 +787,28 @@ func _test_summon_taunt() -> void:
 	b.wave = Enemies.TOTAL_WAVES
 	b._ready()
 	_check(b._enemies.size() == 1, "волна босса начинается с одного босса")
+	# Героя делаем условно бессмертным: тест про призыв, а не про выживание
+	b._hero_actor.max_hp = 100000.0
+	b._hero_actor.hp = 100000.0
 	var boss: Actor = b._enemies[0]
 	_check(boss.cast_interval == Enemies.SUMMON_INTERVAL, "у босса задан интервал умения (прогресс-бар)")
 	_check(not boss.taunt, "у самого босса провокации нет")
 
-	# Прогресс-бар заполняется: по готовности босс призывает союзников
+	# Прогресс-бар заполняется: по готовности босс призывает союзников —
+	# случайную комбинацию на сумму бюджета призыва (последний может округлить вверх)
 	boss.step(Enemies.SUMMON_INTERVAL + 0.1)
-	_check(b._enemies.size() == 1 + Enemies.SUMMON_COUNT, "босс призвал %d союзников" % Enemies.SUMMON_COUNT)
-	_check(b._enemy_total == 1 + Enemies.SUMMON_COUNT, "призванные считаются врагами волны")
-	_check(boss.cast_timer < 1.0, "после призыва прогресс умения сброшен")
-
 	var summons := []
 	for e in b._enemies:
 		if e != boss:
 			summons.append(e)
+	_check(summons.size() >= 1, "босс призвал союзников (%d)" % summons.size())
+	var spent := 0
+	for s in summons:
+		spent += Enemies.VALUES[s.stats.get("type", "slime")]
+	_check(spent >= Enemies.SUMMON_VALUE and spent < Enemies.SUMMON_VALUE + 4, "комбинация закрывает бюджет призыва (%d очков)" % spent)
+	_check(b._enemy_total == 1 + summons.size(), "призванные считаются врагами волны")
+	_check(boss.cast_timer < 1.0, "после призыва прогресс умения сброшен")
+
 	var all_taunt := true
 	for s in summons:
 		if not s.taunt:
@@ -807,31 +816,89 @@ func _test_summon_taunt() -> void:
 	_check(all_taunt, "все призванные — с провокацией")
 	_check(b._hero_actor.target != null and b._hero_actor.target.taunt, "герой переключился на призванных (провокация)")
 
-	# В подсказке призванного указана провокация
+	# В подсказке призванного указаны провокация и отсутствие наград
 	var tip_found := false
 	for c in summons[0].get_children():
-		if c is Control and "Провокация" in c.tooltip_text:
+		if c is Control and "Провокация" in c.tooltip_text and "не даёт опыта" in c.tooltip_text:
 			tip_found = true
-	_check(tip_found, "в подсказке призванного врага есть провокация")
+	_check(tip_found, "в подсказке призванного: провокация и отсутствие наград")
 
-	# Пока жив хоть один провоцирующий — герой не бьёт босса
+	# Призванные не дают ни опыта, ни сундуков
+	var xp_before: int = h.xp
+	var lvl_before: int = h.level
+	var chests_before: int = b._chests.size()
 	summons[0].alive = false
 	b._on_enemy_died(summons[0])
-	_check(b._hero_actor.target.taunt, "пока жив второй призванный — герой бьёт его")
-	summons[1].alive = false
-	b._on_enemy_died(summons[1])
+	_check(h.xp == xp_before and h.level == lvl_before, "призванные не дают опыта")
+	_check(b._chests.size() == chests_before, "призванные не оставляют сундуков")
+
+	# Пока жив хоть один провоцирующий — герой не бьёт босса
+	for i in range(1, summons.size()):
+		if b._hero_actor.target != null:
+			_check(b._hero_actor.target.taunt, "пока живы призванные — герой бьёт их")
+		summons[i].alive = false
+		b._on_enemy_died(summons[i])
 	_check(b._hero_actor.target == boss, "когда призванные мертвы — герой снова бьёт босса")
 
 	# Лимит живых призванных: повторные призывы не плодят толпу
-	boss.cast_timer = 0.0
-	boss.step(Enemies.SUMMON_INTERVAL + 0.1)  # +2 (всего 2 живых)
-	boss.step(Enemies.SUMMON_INTERVAL + 0.1)  # +1 (лимит 3)
+	for i in 5:
+		boss.step(Enemies.SUMMON_INTERVAL + 0.1)
 	var active := 0
 	for e in b._enemies:
 		if e.alive and e.taunt:
 			active += 1
-	_check(active == Enemies.SUMMON_MAX_ACTIVE, "живых призванных не больше %d" % Enemies.SUMMON_MAX_ACTIVE)
+	_check(active == Enemies.SUMMON_MAX_ACTIVE, "живых призванных ровно лимит %d" % Enemies.SUMMON_MAX_ACTIVE)
 	b.free()
+
+
+func _test_attack_jitter() -> void:
+	print("-- Разброс темпа атаки врагов --")
+	var tgt := Actor.new()
+	tgt.setup("цель", {"hp": 100000, "atk": 1, "spd": 1.0}, Color.WHITE, "rect", 10.0, "hero")
+	var e := Actor.new()
+	e.setup("враг", {"hp": 50, "atk": 1, "spd": 1.0}, Color.WHITE, "rect", 10.0, "enemy")
+	e.engaged = true
+	e.target = tgt
+	var rec := {"t": 0.0, "hits": []}
+	e.attacked.connect(func(_s, _d): rec["hits"].append(rec["t"]))
+	var dt := 0.01
+	while rec["hits"].size() < 30:
+		rec["t"] += dt
+		e.step(dt)
+	# Первый удар — в базовом темпе (1 уд/с), без разброса
+	_check(absf(rec["hits"][0] - 1.0) < 0.02, "первый удар в базовом темпе")
+	# Следующие удары выбирают скорость из разброса: интервалы различаются,
+	# но не выходят за пределы ±ATK_JITTER
+	var lo := 1.0 * (1.0 - Enemies.ATK_JITTER) - 0.02
+	var hi := 1.0 * (1.0 + Enemies.ATK_JITTER) + 0.02
+	var in_range := true
+	var distinct := {}
+	for i in range(1, rec["hits"].size()):
+		var iv: float = rec["hits"][i] - rec["hits"][i - 1]
+		if iv < lo or iv > hi:
+			in_range = false
+		distinct[roundi(iv * 100.0)] = true
+	_check(in_range, "интервалы ударов в пределах ±%d%%" % roundi(Enemies.ATK_JITTER * 100.0))
+	_check(distinct.size() >= 5, "темп атаки различается от удара к удару (%d вариантов)" % distinct.size())
+	# Герой бьёт в стабильном темпе, без разброса
+	var h2 := Actor.new()
+	h2.setup("герой", {"hp": 50, "atk": 1, "spd": 1.0}, Color.WHITE, "rect", 10.0, "hero")
+	h2.engaged = true
+	h2.target = tgt
+	var rec2 := {"t": 0.0, "hits": []}
+	h2.attacked.connect(func(_s, _d): rec2["hits"].append(rec2["t"]))
+	while rec2["hits"].size() < 10:
+		rec2["t"] += dt
+		h2.step(dt)
+	var stable := true
+	for i in range(1, rec2["hits"].size()):
+		var iv2: float = rec2["hits"][i] - rec2["hits"][i - 1]
+		if absf(iv2 - 1.0) > 0.02:
+			stable = false
+	_check(stable, "герой атакует в стабильном темпе")
+	e.free()
+	h2.free()
+	tgt.free()
 
 
 func _test_chests_heal_speed() -> void:

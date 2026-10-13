@@ -36,6 +36,7 @@ var engaged := false
 var target: Actor = null
 
 var _atk_timer := 0.0
+var _atk_interval := 1.0  # интервал до следующего удара (у врагов — с разбросом)
 var _flash := 0.0
 var _bleed_accum := 0.0  # дробный урон кровотечения, копится до целого
 var _stun_max := 1.0     # длительность текущего оглушения (для прогресс-бара)
@@ -52,6 +53,8 @@ func setup(p_name: String, p_stats: Dictionary, p_color: Color, p_shape: String,
 	max_hp = float(maxi(1, int(stats.get("hp", 1))))
 	hp = max_hp
 	move_speed = float(stats.get("move", 80.0))
+	# Первый удар — в базовом темпе; следующие враги пересчитывают с разбросом
+	_atk_interval = 1.0 / maxf(0.1, float(stats.get("spd", 1.0)))
 	# Значки статусных эффектов над головой (видны, только когда эффект активен)
 	var kinds := ["poison", "bleed", "stun"]
 	for i in kinds.size():
@@ -148,10 +151,21 @@ func step(delta: float) -> void:
 	if not alive or not engaged or stun_left > 0.0 or target == null or not target.alive:
 		return
 	_atk_timer += delta
-	var interval := 1.0 / maxf(0.1, float(stats.get("spd", 1.0)))
-	if _atk_timer >= interval:
-		_atk_timer -= interval
+	if _atk_timer >= _atk_interval:
+		_atk_timer -= _atk_interval
 		_attack()
+		_roll_next_attack()
+
+
+## Следующий удар выбирает свою скорость: у врагов интервал каждый раз
+## случайный в пределах разброса (одинаковые враги не бьют одновременно),
+## герой бьёт в стабильном темпе по своей скорости атаки.
+func _roll_next_attack() -> void:
+	var base := 1.0 / maxf(0.1, float(stats.get("spd", 1.0)))
+	if team == "enemy":
+		_atk_interval = base * (1.0 + randf_range(-Enemies.ATK_JITTER, Enemies.ATK_JITTER))
+	else:
+		_atk_interval = base
 
 
 ## Обновить значки эффектов: счётчик стаков, прогресс самого старого, подсказка.
