@@ -51,6 +51,7 @@ func _process(_delta: float) -> bool:
 			var main := root.get_node("Main")
 			_check(main._screen is MainMenu, "стартовый экран — главное меню")
 			_check(main._screen._start_btn.disabled, "без выбора героя забег начать нельзя")
+			_check(main._music_current == "menu", "в меню играет музыка меню")
 			main._on_menu_start("knight")
 			_phase = 3
 			_frames = 0
@@ -60,6 +61,7 @@ func _process(_delta: float) -> bool:
 		if _frames >= 30:
 			var main := root.get_node("Main")
 			_check(main._screen is GearScreen, "после выбора героя — лагерь")
+			_check(main._music_current == "camp", "в лагере играет музыка лагеря")
 			main._on_embark()
 			_phase = 4
 			_frames = 0
@@ -69,6 +71,7 @@ func _process(_delta: float) -> bool:
 		if _frames >= 30:
 			var main := root.get_node("Main")
 			_check(main._screen is BattleScreen, "Main переключился на экран боя")
+			_check(main._music_current == "battle", "в бою играет боевая музыка")
 			var bs := main._screen as BattleScreen
 			var actor_col: Color = bs._hero_actor.body_color
 			_check(actor_col == Hero.ROSTER["knight"]["color"], "на поле боя — внешность выбранного героя")

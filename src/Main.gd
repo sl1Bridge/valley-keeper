@@ -12,17 +12,44 @@ extends Node
 var hero: Hero = null  # герой текущего забега
 var selected_kind := ""
 
+## Фоновая музыка (шина "Music"): зацикленные треки по экранам.
+const MUSIC := {
+	"menu": preload("res://assets/music/valley_keeper_menu.wav"),
+	"camp": preload("res://assets/music/valley_keeper_camp.wav"),
+	"battle": preload("res://assets/music/valley_keeper_battle.wav"),
+}
+
 var _screen: Control = null
 var _settings_layer: CanvasLayer
 var _surrender_btn: FlagButton
 var _modal_count := 0  # открытые модальные окна (настройки, сдача)
+var _music_player: AudioStreamPlayer
+var _music_current := ""
 
 
 func _ready() -> void:
 	Settings.ensure_buses()
+	# Музыка не подчиняется паузе: продолжает играть, когда бой на паузе
+	# (открыты настройки — так слайдер громкости слышен сразу)
+	_music_player = AudioStreamPlayer.new()
+	_music_player.process_mode = Node.PROCESS_MODE_ALWAYS
+	if AudioServer.get_bus_index("Music") != -1:
+		_music_player.bus = "Music"
+	add_child(_music_player)
 	_build_settings_button()
 	_build_surrender_button()
 	show_menu("")
+
+
+## Переключить фоновую музыку (без перезапуска, если трек тот же). Зациклена.
+func _play_music(key: String) -> void:
+	if _music_current == key:
+		return
+	_music_current = key
+	var stream: AudioStreamWAV = MUSIC[key]
+	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	_music_player.stream = stream
+	_music_player.play()
 
 
 func _clear_screen() -> void:
@@ -36,6 +63,7 @@ func _clear_screen() -> void:
 
 func show_menu(msg: String) -> void:
 	_clear_screen()
+	_play_music("menu")
 	var menu := MainMenu.new()
 	menu.selected_kind = selected_kind
 	menu.message = msg
@@ -56,6 +84,7 @@ func _on_menu_start(kind: String) -> void:
 
 func show_gear(msg: String) -> void:
 	_clear_screen()
+	_play_music("camp")
 	var gear := GearScreen.new()
 	gear.hero = hero
 	gear.wave = hero.wave
@@ -68,6 +97,7 @@ func show_gear(msg: String) -> void:
 
 func _on_embark() -> void:
 	_clear_screen()
+	_play_music("battle")
 	var battle := BattleScreen.new()
 	battle.hero = hero
 	battle.wave = hero.wave
