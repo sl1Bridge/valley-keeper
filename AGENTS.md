@@ -67,7 +67,7 @@ godot --headless --path . --quit-after 180
 2. Поменял механику или число баланса — в том же коммите обнови `docs/mechanics.md` и/или `docs/balance.md`.
 3. Прогони импорт + автотесты + 180 кадров. Красные тесты = правка не сделана, чини.
 4. Коммит: `git -c commit.gpgsign=false commit` (GPG-подпись в этом окружении недоступна).
-5. Пуш на GitHub (`sl1Bridge/valley-keeper`, ветка `master`) — через GitHub-плагин (`push_files`), затем `git fetch origin && git reset origin/master` для синхронизации.
+5. Пуш на GitHub (`sl1Bridge/valley-keeper`, ветка `master`) — обычный `git push` (учётка сохранена в Git Credential Manager, решение от 2026-10-13). GitHub-плагин (`push_files`) — только запасной вариант для текстовых правок: его транспорт текстовый и портит бинарные файлы (mp3 и т.п.).
 6. В итоговом сообщении: что изменено, что проверено, что предлагается дальше.
 
 ## Типичные грабли (уже наступали)
