@@ -76,6 +76,8 @@ godot --headless --path . --quit-after 180
 - GDScript не выводит тип через `:=` из Variant (`max()`, `load()` без каста) — указывай тип явно.
 - Вложенный класс: `class Chest:\n\textends Node2D`, не однострочник.
 - В headless-тестах узлы вне дерева: всё, что требует `get_tree()` (твины, таймеры), защищай `is_inside_tree()`.
+- `AudioStreamPlayer.play()` в тот же кадр, в котором плеер вошёл в дерево (например, из `_ready` при старте игры), молча не стартует — откладывай на кадр (`await get_tree().process_frame`).
+- Не меняй `AudioStreamWAV.loop_mode` в рантайме — старт воспроизведения ломается. Зацикливание задавай при импорте (`.import`, `edit/loop_mode`: 2 = Forward; 0 там — «определить из wav», 1 — «выкл», не перепутай).
 
 ## Документация
 

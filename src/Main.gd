@@ -46,9 +46,12 @@ func _play_music(key: String) -> void:
 	if _music_current == key:
 		return
 	_music_current = key
-	var stream: AudioStreamWAV = MUSIC[key]
-	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	_music_player.stream = stream
+	# Зацикливание задано при импорте (.import, edit/loop_mode=Forward):
+	# установка stream.loop_mode в рантайме ломает старт воспроизведения.
+	_music_player.stream = MUSIC[key]
+	# Особенность движка: play() в тот же кадр, в котором плеер вошёл в дерево
+	# (первая музыка — из _ready), молча не стартует. Ждём кадр.
+	await get_tree().process_frame
 	_music_player.play()
 
 
