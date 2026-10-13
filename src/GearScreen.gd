@@ -18,6 +18,12 @@ const SLOT_DISPLAY := {"weapon": "Оружие", "weapon1": "Оружие I", "w
 const CELL := 64.0
 const INVENTORY_COLS := 6
 
+## Звуки лагеря (шина "SFX"): надевание предмета, продажа за опыт,
+## распределение очка характеристик.
+const SFX_EQUIP := preload("res://assets/sfx/equip_item.mp3")
+const SFX_SELL := preload("res://assets/sfx/sell_item.mp3")
+const SFX_STAT_POINT := preload("res://assets/sfx/stat_point.mp3")
+
 
 func _ready() -> void:
 	rebuild()
@@ -350,7 +356,10 @@ func _build_bottom_bar(root: VBoxContainer) -> void:
 
 func _on_stat_plus(stat: String) -> void:
 	if hero.allocate(stat):
+		# Звук — после rebuild: перестройка интерфейса удаляет всех детей
+		# экрана, а вместе с ними и только что созданный плеер
 		rebuild()
+		Settings.play_sfx(self, SFX_STAT_POINT)
 
 
 ## Подходит ли предмет ячейке экипировки (кольца — обеим ячейкам,
@@ -366,18 +375,24 @@ func _can_unequip() -> bool:
 
 ## Бросок предмета на ячейку: надеть / снять / продать.
 ## При надевании передаём целевую ячейку — предмет встаёт именно в неё.
+## Звук играется после rebuild: перестройка удаляет детей экрана (снятие — без звука, отклонено).
 func _on_cell_drop(cell: InvCell, data: Dictionary) -> void:
 	var item: Item = data["item"]
+	var sfx: AudioStream = null
 	if cell.is_sell:
 		var xp := hero.sell_item(item)
 		message = "Продан: %s (+%d опыта)" % [item.name, xp]
+		sfx = SFX_SELL
 	elif cell.slot != "":
 		hero.equip(item, cell.slot)
 		message = "Надето: %s" % item.name
+		sfx = SFX_EQUIP
 	else:
 		hero.unequip(data["from"])
 		message = "Снято в рюкзак: %s" % item.name
 	rebuild()
+	if sfx != null:
+		Settings.play_sfx(self, sfx)
 
 
 ## Иконка предмета по типу слота: одна на все предметы слота,

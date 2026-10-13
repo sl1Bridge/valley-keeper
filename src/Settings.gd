@@ -35,6 +35,22 @@ static func apply() -> void:
 	_apply_bus("SFX", sfx_volume)
 
 
+## Одноразовый звуковой эффект (шина "SFX"): плеер становится ребёнком parent
+## и самоуничтожается по окончании. Несколько звуков могут играть сразу —
+## каждый своим плеером. Вне дерева (headless-тесты) — тишина.
+static func play_sfx(parent: Node, stream: AudioStream, db := 0.0) -> void:
+	if parent == null or stream == null or not parent.is_inside_tree():
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = stream
+	p.volume_db = db
+	if AudioServer.get_bus_index("SFX") != -1:
+		p.bus = "SFX"
+	parent.add_child(p)
+	p.finished.connect(p.queue_free)
+	p.play()
+
+
 static func _ensure_bus(bus_name: String) -> void:
 	if AudioServer.get_bus_index(bus_name) != -1:
 		return

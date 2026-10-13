@@ -40,6 +40,22 @@ const SFX_EVADE_HERO := {
 const SFX_DEATH_HERO := preload("res://assets/sfx/death_hero.mp3")
 const SFX_DEATH_ENEMY := preload("res://assets/sfx/death_enemy.mp3")
 
+## Способности героев: Рыцарь — «Рёв», Вор — «Смертельный удар».
+const SFX_ABILITY_HERO := {
+	"knight": preload("res://assets/sfx/ability_roar.mp3"),
+	"thief": preload("res://assets/sfx/ability_deadly_strike.mp3"),
+}
+## Умение босса «Призыв».
+const SFX_BOSS_SUMMON := preload("res://assets/sfx/boss_summon.mp3")
+## Сундуки: падение на поле, открытие обычного и финального (золотого).
+const SFX_CHEST_DROP := preload("res://assets/sfx/chest_drop.mp3")
+const SFX_CHEST_OPEN := preload("res://assets/sfx/chest_open.mp3")
+const SFX_CHEST_OPEN_GOLD := preload("res://assets/sfx/chest_open_gold.mp3")
+## Переключение скорости боя (x1/x2).
+const SFX_BATTLE_SPEED := preload("res://assets/sfx/battle_speed.mp3")
+## Общий клик кнопки интерфейса (выбор предмета в финальном сундуке).
+const SFX_UI_CLICK := preload("res://assets/sfx/ui_click.mp3")
+
 ## Строи по числу врагов: смещения от FORMATION_ANCHOR.
 ## Один враг — напротив героя; больше — разные построения, не колонной.
 const FORMATIONS := {
@@ -328,6 +344,8 @@ func _on_boss_cast(boss: Actor) -> void:
 		_add_enemy(type, boss.position + offsets[i % offsets.size()], true, true)
 		_enemy_total += 1  # призванные тоже считаются врагами волны
 		i += 1
+	if i > 0:
+		Settings.play_sfx(self, SFX_BOSS_SUMMON)
 	_spawn_popup("Призыв!", boss.position + Vector2(-40, -boss.radius * 2.0 - 70), Color(0.72, 0.5, 0.95), 20)
 	_update_boss_cast_block()  # пока призванные живы, перезарядка не идёт
 	_update_hud()
@@ -442,6 +460,7 @@ func _trigger_ability() -> void:
 			if e.alive:
 				e.add_stun(Hero.ROAR_STUN)
 		_spawn_popup("Рёв!", _hero_actor.position + Vector2(-20, -_hero_actor.radius * 2.0 - 70), Hero.ABILITY_INFO["roar"]["color"], 24)
+		Settings.play_sfx(self, SFX_ABILITY_HERO["knight"])
 		_ability_timer = 0.0
 		_ability_icon.set_fill(0.0)
 	else:
@@ -536,6 +555,7 @@ func _on_actor_attacked(src: Actor, dst: Actor) -> void:
 		_ability_icon.set_fill(0.0)
 		_ability_icon.tooltip_text = hero.ability_tooltip()
 		_spawn_popup("Смертельный удар!", dst.position + Vector2(-80, -dst.radius * 2.0 - 96), Hero.ABILITY_INFO["execute"]["color"], 22)
+		Settings.play_sfx(self, SFX_ABILITY_HERO["thief"])
 	if dst.team == "hero":
 		var etype: String = src.stats.get("type", "")
 		if etype == "slime" and _rng.randf() < Enemies.POISON_CHANCE:
@@ -562,6 +582,7 @@ func _on_actor_attacked(src: Actor, dst: Actor) -> void:
 # ---------- Ускорение боя ----------
 
 func _on_speed_pressed() -> void:
+	Settings.play_sfx(self, SFX_BATTLE_SPEED)
 	set_speed(2.0 if _speed < 2.0 else 1.0)
 
 
@@ -589,6 +610,7 @@ func _spawn_chest(pos: Vector2, is_final: bool) -> Chest:
 	chest.clicked.connect(_on_chest_clicked)
 	_chests.append(chest)
 	_world.add_child(chest)
+	Settings.play_sfx(self, SFX_CHEST_DROP)
 	_update_hud()
 	return chest
 
@@ -618,6 +640,7 @@ func _on_chest_clicked(chest: Chest) -> void:
 	var pos: Vector2 = chest.position
 	_chests.erase(chest)
 	chest.queue_free()
+	Settings.play_sfx(self, SFX_CHEST_OPEN)
 	var item := Item.generate(_rng, -1, wave, [], false, hero.kind)
 	_grant_item(item, pos)
 	_update_hud()
@@ -641,6 +664,7 @@ func _open_final_chest() -> void:
 		var item := Item.generate(_rng, -1, wave, taken, true, hero.kind)
 		taken.append(item.name)
 		_current_choices.append(item)
+	Settings.play_sfx(self, SFX_CHEST_OPEN_GOLD)
 	_show_chest_ui()
 
 
@@ -745,6 +769,7 @@ func _show_chest_ui() -> void:
 
 ## Выбор предмета в финальном сундуке.
 func _on_chest_choice(item: Item) -> void:
+	Settings.play_sfx(self, SFX_UI_CLICK)
 	_grant_item(item, FINAL_CHEST_POS)
 	_current_choices = []
 	if _chest_ui != null:

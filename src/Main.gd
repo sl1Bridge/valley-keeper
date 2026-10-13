@@ -19,6 +19,10 @@ const MUSIC := {
 	"battle": preload("res://assets/music/valley_keeper_battle.wav"),
 }
 
+## Общий клик кнопки интерфейса (шина "SFX"). Играет от имени Main —
+## узел постоянный, звук не обрывается при смене экрана.
+const SFX_UI_CLICK := preload("res://assets/sfx/ui_click.mp3")
+
 var _screen: Control = null
 var _settings_layer: CanvasLayer
 var _surrender_btn: FlagButton
@@ -78,6 +82,7 @@ func show_menu(msg: String) -> void:
 
 ## Начало забега: всегда новый герой 1 уровня, прогресс между забегами не сохраняется.
 func _on_menu_start(kind: String) -> void:
+	Settings.play_sfx(self, SFX_UI_CLICK)
 	selected_kind = kind
 	hero = Hero.new(kind)
 	show_gear("Забег начинается! Собери героя и жми «В путь».")
@@ -179,7 +184,10 @@ func _show_end_screen(title: String, text: String, button_text: String, on_press
 	btn.custom_minimum_size = Vector2(260, 56)
 	btn.add_theme_font_size_override("font_size", 24)
 	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	btn.pressed.connect(on_pressed)
+	btn.pressed.connect(func() -> void:
+		Settings.play_sfx(self, SFX_UI_CLICK)
+		on_pressed.call()
+	)
 	box.add_child(btn)
 
 	add_child(screen)
