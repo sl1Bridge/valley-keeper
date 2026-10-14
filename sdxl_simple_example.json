@@ -1,0 +1,178 @@
+{
+  "4": {
+    "inputs": {
+      "ckpt_name": "sd_xl_base_1.0.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint - BASE"
+    }
+  },
+  "5": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Пустое латентное изображение"
+    }
+  },
+  "6": {
+    "inputs": {
+      "text": "fantasy RPG inventory item icon, a sturdy tower shield made of aged oak wood and forged steel, gold ornamental trim, subtle engraved details, blue crystal centerpiece, stylized 2D fantasy game art, semi-realistic hand-painted game asset, restrained cartoon influence, crisp pixel-inspired shading, subtle pixel texture, slightly blocky clusters of color, clean stepped edges in small details, textured wood grain, brushed metal, controlled highlights, matte materials, strong readable silhouette, bold dark outlines, rich but balanced colors, front three-quarter view, centered single object, isolated on a flat solid magenta background, consistent game art style, no frame, no text",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Кодирование текста CLIP (Запрос)"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "overly cute cartoon, childish, chibi, toy-like, plastic, glossy 3D render, excessive shiny highlights, smooth airbrushed gradients, exaggerated bevels, oversaturated yellow gold, photorealism, realistic photography, blurry, low contrast, noisy texture, excessive tiny details, smooth vector art, extremely large pixels, 8-bit retro game, tiny unreadable object, multiple shields, cropped object, background scenery, text, watermark, decorative border, inventory frame",
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Кодирование текста CLIP (Запрос)"
+    }
+  },
+  "10": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 601124747246635,
+      "steps": 25,
+      "cfg": 8,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "start_at_step": 0,
+      "end_at_step": 20,
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "4",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced) - BASE"
+    }
+  },
+  "11": {
+    "inputs": {
+      "add_noise": "disable",
+      "noise_seed": 0,
+      "steps": 25,
+      "cfg": 8,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "start_at_step": 20,
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "12",
+        0
+      ],
+      "positive": [
+        "15",
+        0
+      ],
+      "negative": [
+        "16",
+        0
+      ],
+      "latent_image": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced) - REFINER"
+    }
+  },
+  "12": {
+    "inputs": {
+      "ckpt_name": "sd_xl_refiner_1.0.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint - REFINER"
+    }
+  },
+  "15": {
+    "inputs": {
+      "text": "fantasy RPG inventory item icon, a sturdy tower shield made of aged oak wood and forged steel, gold ornamental trim, subtle engraved details, blue crystal centerpiece, stylized 2D fantasy game art, semi-realistic hand-painted game asset, restrained cartoon influence, crisp pixel-inspired shading, subtle pixel texture, slightly blocky clusters of color, clean stepped edges in small details, textured wood grain, brushed metal, controlled highlights, matte materials, strong readable silhouette, bold dark outlines, rich but balanced colors, front three-quarter view, centered single object, isolated on a flat solid magenta background, consistent game art style, no frame, no text",
+      "clip": [
+        "12",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Кодирование текста CLIP (Запрос)"
+    }
+  },
+  "16": {
+    "inputs": {
+      "text": "overly cute cartoon, childish, chibi, toy-like, plastic, glossy 3D render, excessive shiny highlights, smooth airbrushed gradients, exaggerated bevels, oversaturated yellow gold, photorealism, realistic photography, blurry, low contrast, noisy texture, excessive tiny details, smooth vector art, extremely large pixels, 8-bit retro game, tiny unreadable object, multiple shields, cropped object, background scenery, text, watermark, decorative border, inventory frame",
+      "clip": [
+        "12",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Кодирование текста CLIP (Запрос)"
+    }
+  },
+  "17": {
+    "inputs": {
+      "samples": [
+        "11",
+        0
+      ],
+      "vae": [
+        "12",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Декодировать VAE"
+    }
+  },
+  "19": {
+    "inputs": {
+      "filename_prefix": "shield_blue_01",
+      "images": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Сохранить изображение"
+    }
+  }
+}

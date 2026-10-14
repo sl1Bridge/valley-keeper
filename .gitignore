@@ -15,3 +15,6 @@ Thumbs.db
 # Editor backups
 *.tmp
 *.translation
+
+# ComfyUI staging (генерируемые иконки, не для репозитория)
+comfy_out/
