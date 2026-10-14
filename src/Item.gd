@@ -22,14 +22,18 @@ const STAT_ORDER := ["atk", "spd", "def", "surv", "dodge", "block"]
 # штрафы (минусы) с редкостью не растут (временные значения, уточнить по игротестам)
 const RARITY_MULT := [1.0, 1.3, 1.6, 2.0, 2.5, 3.2]
 
-## Пути к нарисованным иконкам предметов (пайплайн — docs/art-style.md).
+## Нарисованные иконки предметов (пайплайн — docs/art-style.md).
 ## Ключ — имя шаблона; если иконки нет, интерфейс рисует примитив слота.
-const ICON_PATHS := {
-	"Ржавый меч": "res://assets/icons/items/sword_rusty.png",
-	"Топор лесника": "res://assets/icons/items/axe_forester.png",
-	"Кинжал странника": "res://assets/icons/items/dagger_wanderer.png",
-	"Молот кузнеца": "res://assets/icons/items/hammer_blacksmith.png",
-	"Кинжал акробата": "res://assets/icons/items/dagger_acrobat.png",
+## ВАЖНО: только preload, не load() в icon_texture(). Текстура, впервые
+## загруженная через load() внутри _draw() (в фазе отрисовки), не успевает
+## попасть на видеокарту и рисуется белым квадратом. preload грузит
+## текстуры при загрузке скрипта — задолго до первой отрисовки.
+const ICON_TEXTURES := {
+	"Ржавый меч": preload("res://assets/icons/items/sword_rusty.png"),
+	"Топор лесника": preload("res://assets/icons/items/axe_forester.png"),
+	"Кинжал странника": preload("res://assets/icons/items/dagger_wanderer.png"),
+	"Молот кузнеца": preload("res://assets/icons/items/hammer_blacksmith.png"),
+	"Кинжал акробата": preload("res://assets/icons/items/dagger_acrobat.png"),
 }
 
 # Базовые веса редкостей на 1-й волне (временные значения)
@@ -167,10 +171,7 @@ func slot_name() -> String:
 ## Текстура нарисованной иконки предмета или null, если её нет
 ## (тогда интерфейс рисует примитив слота — GearScreen.draw_slot_icon).
 func icon_texture() -> Texture2D:
-	var path: String = ICON_PATHS.get(name, "")
-	if path == "":
-		return null
-	var tex: Texture2D = load(path)
+	var tex: Texture2D = ICON_TEXTURES.get(name, null)
 	return tex
 
 
