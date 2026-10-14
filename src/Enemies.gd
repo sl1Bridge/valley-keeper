@@ -16,7 +16,7 @@ const TYPES := {
 		"color": Color(0.55, 0.55, 0.62), "shape": "triangle", "size": 30.0, "move": 115.0,
 	},
 	"golem": {
-		"name": "Голем", "hp": 48, "atk": 7, "def": 4, "spd": 0.5, "xp": 10,
+		"name": "Голем", "hp": 41, "atk": 7, "def": 4, "spd": 0.5, "xp": 10,
 		"color": Color(0.6, 0.45, 0.3), "shape": "rect", "size": 42.0, "move": 40.0,
 	},
 	"boss": {

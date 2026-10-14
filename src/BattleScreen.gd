@@ -547,6 +547,8 @@ func _on_actor_evaded(a: Actor) -> void:
 ## «Снаряд»: точка летит от атакующего к цели.
 ## Атаки врагов могут наложить на героя статусный эффект:
 ## слизень — отравление, волк — кровотечение, голем и босс — оглушение.
+## Защита героя снижает и шанс наложения эффекта: реальный шанс =
+## базовый × (1 − def_pct) — та же доля, что и снижение урона.
 func _on_actor_attacked(src: Actor, dst: Actor) -> void:
 	# «Смертельный удар»: заряд потрачен этой атакой (урон уже удвоен
 	# множителем в Actor) — перезарядка начинается заново
@@ -559,13 +561,15 @@ func _on_actor_attacked(src: Actor, dst: Actor) -> void:
 		Settings.play_sfx(self, SFX_ABILITY_HERO["thief"])
 	if dst.team == "hero":
 		var etype: String = src.stats.get("type", "")
-		if etype == "slime" and _rng.randf() < Enemies.POISON_CHANCE:
+		# Защита героя снижает шанс наложения эффекта (30% стана при 20% защиты → 24%)
+		var effect_mult := 1.0 - dst.def_pct
+		if etype == "slime" and _rng.randf() < Enemies.POISON_CHANCE * effect_mult:
 			dst.add_poison()
 			_spawn_popup("Отравление!", dst.position + Vector2(-44, -dst.body_height() - 96), Color(0.5, 0.9, 0.4), 18)
-		elif etype == "wolf" and _rng.randf() < Enemies.BLEED_CHANCE:
+		elif etype == "wolf" and _rng.randf() < Enemies.BLEED_CHANCE * effect_mult:
 			dst.add_bleed()
 			_spawn_popup("Кровотечение!", dst.position + Vector2(-52, -dst.body_height() - 96), Color(0.9, 0.35, 0.3), 18)
-		elif Enemies.STUN_CHANCE.has(etype) and _rng.randf() < Enemies.STUN_CHANCE[etype]:
+		elif Enemies.STUN_CHANCE.has(etype) and _rng.randf() < Enemies.STUN_CHANCE[etype] * effect_mult:
 			dst.add_stun(Enemies.STUN_DURATION[etype])
 			_spawn_popup("Оглушение!", dst.position + Vector2(-44, -dst.body_height() - 96), Color(1.0, 0.85, 0.3), 18)
 	if not is_inside_tree():

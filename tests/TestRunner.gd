@@ -810,10 +810,29 @@ func _test_bleed_stun() -> void:
 
 	# У голема и босса стан прописан, у босса сильнее; у слизня и волка стана нет
 	_check(Enemies.STUN_CHANCE.has("golem") and Enemies.STUN_CHANCE.has("boss"), "стан накладывают голем и босс")
-	_check(int(Enemies.TYPES["golem"]["hp"]) > 36 and int(Enemies.TYPES["golem"]["atk"]) > 5, "голем усилен (было 36 HP и 5 атаки, теперь %d HP и %d)" % [int(Enemies.TYPES["golem"]["hp"]), int(Enemies.TYPES["golem"]["atk"])])
+	_check(int(Enemies.TYPES["golem"]["hp"]) == 41 and int(Enemies.TYPES["golem"]["atk"]) > 5, "HP голема снижено на 15%% (было 48, теперь %d)" % int(Enemies.TYPES["golem"]["hp"]))
 	_check(Enemies.STUN_CHANCE["boss"] > Enemies.STUN_CHANCE["golem"], "у босса шанс стана выше")
 	_check(Enemies.STUN_DURATION["boss"] > Enemies.STUN_DURATION["golem"], "у босса стан дольше")
 	_check(not Enemies.STUN_CHANCE.has("slime") and not Enemies.STUN_CHANCE.has("wolf"), "слизень и волк стан не накладывают")
+
+	# Защита героя снижает и шанс наложения эффекта: реальный шанс = базовый × (1 − def_pct)
+	var b2 := BattleScreen.new()
+	b2.hero = Hero.new()
+	b2.wave = 1
+	b2.rng_seed = 42
+	b2._ready()
+	var slime := Actor.new()
+	slime.setup("Слизень", {"type": "slime", "hp": 10, "atk": 1, "spd": 1.0}, Color.WHITE, "circle", 10.0, "enemy")
+	b2._hero_actor.def_pct = 1.0  # 100% защиты — эффект не наложится никогда
+	for i in 200:
+		b2._on_actor_attacked(slime, b2._hero_actor)
+	_check(b2._hero_actor.poison_times.is_empty(), "защита 100%%: отравление ни разу не наложилось за 200 ударов")
+	b2._hero_actor.def_pct = 0.0
+	for i in 200:
+		b2._on_actor_attacked(slime, b2._hero_actor)
+	_check(not b2._hero_actor.poison_times.is_empty(), "без защиты отравление накладывается (шанс 15%% за удар)")
+	slime.free()
+	b2.free()
 
 	# Эффекты сбрасываются при завершении фазы боя
 	var h := Hero.new()
