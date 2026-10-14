@@ -64,6 +64,13 @@ def cut_background(src: Path, dst: Path, tol: int = 30, pad: int = 24) -> None:
         b = min(h, b + pad)
         out = out.crop((l, t, r, b))
 
+    # Центровка на квадратном прозрачном холсте: иконки в слотах игры
+    # квадратные, предмет должен сидеть ровно по центру.
+    side = max(out.width, out.height)
+    square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    square.alpha_composite(out, ((side - out.width) // 2, (side - out.height) // 2))
+    out = square
+
     out.save(dst)
     print("Готово: %s (%dx%d)" % (dst, out.width, out.height))
 
