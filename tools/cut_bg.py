@@ -52,7 +52,7 @@ def cut_background(src: Path, dst: Path, tol: int = 30, pad: int = 24) -> None:
     alpha_img = Image.fromarray(alpha, "L").filter(ImageFilter.GaussianBlur(1.2))
     # Обнуляем совсем слабую альфу (остатки фона/виньетки по краям):
     # иначе эти «пылинки» ломают определение рамки содержимого и центровку.
-    alpha_arr = np.asarray(alpha_img)
+    alpha_arr = np.array(alpha_img)
     alpha_arr[alpha_arr < 24] = 0
     alpha_img = Image.fromarray(alpha_arr, "L")
 
