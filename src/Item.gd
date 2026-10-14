@@ -22,6 +22,16 @@ const STAT_ORDER := ["atk", "spd", "def", "surv", "dodge", "block"]
 # штрафы (минусы) с редкостью не растут (временные значения, уточнить по игротестам)
 const RARITY_MULT := [1.0, 1.3, 1.6, 2.0, 2.5, 3.2]
 
+## Пути к нарисованным иконкам предметов (пайплайн — docs/art-style.md).
+## Ключ — имя шаблона; если иконки нет, интерфейс рисует примитив слота.
+const ICON_PATHS := {
+	"Ржавый меч": "res://assets/icons/items/sword_rusty.png",
+	"Топор лесника": "res://assets/icons/items/axe_forester.png",
+	"Кинжал странника": "res://assets/icons/items/dagger_wanderer.png",
+	"Молот кузнеца": "res://assets/icons/items/hammer_blacksmith.png",
+	"Кинжал акробата": "res://assets/icons/items/dagger_acrobat.png",
+}
+
 # Базовые веса редкостей на 1-й волне (временные значения)
 const RARITY_BASE_WEIGHTS := [70.0, 20.0, 7.0, 2.2, 0.7, 0.1]
 # Сдвиг весов к старшим редкостям за каждую волну после первой
@@ -152,6 +162,16 @@ func rarity_color() -> Color:
 
 func slot_name() -> String:
 	return SLOT_NAMES.get(slot, slot)
+
+
+## Текстура нарисованной иконки предмета или null, если её нет
+## (тогда интерфейс рисует примитив слота — GearScreen.draw_slot_icon).
+func icon_texture() -> Texture2D:
+	var path: String = ICON_PATHS.get(name, "")
+	if path == "":
+		return null
+	var tex: Texture2D = load(path)
+	return tex
 
 
 ## Текст вида "Сила +3, Шанс уворота +2%" (бонусы — целые числа;

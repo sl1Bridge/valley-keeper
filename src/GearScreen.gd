@@ -476,7 +476,14 @@ class InvCell:
 			border = Color(0.95, 0.8, 0.3)
 		draw_rect(r, border, false, 2.0)
 		if item != null:
-			GearScreen.draw_slot_icon(self, item.slot, size / 2, size.x * 0.72, item.rarity_color())
+			var tex: Texture2D = item.icon_texture()
+			if tex != null:
+				# Нарисованная иконка (прозрачный фон); рамка выше уже дала
+				# цвет редкости
+				var m := 4.0
+				draw_texture_rect(tex, Rect2(Vector2(m, m), size - Vector2(2 * m, 2 * m)), false)
+			else:
+				GearScreen.draw_slot_icon(self, item.slot, size / 2, size.x * 0.72, item.rarity_color())
 			tooltip_text = "%s (%s)\n%s · %s" % [item.name, item.rarity_name(), item.slot_name(), item.bonuses_text()]
 		elif slot != "":
 			var base := slot
@@ -503,6 +510,7 @@ class InvCell:
 		var icon := _DragIcon.new()
 		icon.icon_slot = item.slot
 		icon.icon_color = item.rarity_color()
+		icon.icon_texture = item.icon_texture()
 		icon.set_anchors_preset(Control.PRESET_FULL_RECT)
 		preview.add_child(icon)
 		set_drag_preview(preview)
@@ -530,7 +538,11 @@ class _DragIcon:
 
 	var icon_slot := "weapon"
 	var icon_color := Color.WHITE
+	var icon_texture: Texture2D = null
 
 
 	func _draw() -> void:
-		GearScreen.draw_slot_icon(self, icon_slot, size / 2, size.x * 0.8, icon_color)
+		if icon_texture != null:
+			draw_texture_rect(icon_texture, Rect2(Vector2.ZERO, size), false)
+		else:
+			GearScreen.draw_slot_icon(self, icon_slot, size / 2, size.x * 0.8, icon_color)

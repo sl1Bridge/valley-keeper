@@ -719,6 +719,11 @@ func _show_chest_ui() -> void:
 		btn.custom_minimum_size = Vector2(360, 56)
 		btn.text = "%s (%s)\n%s · %s" % [item.name, item.rarity_name(), item.slot_name(), item.bonuses_text()]
 		btn.add_theme_color_override("font_color", item.rarity_color())
+		# Нарисованная иконка предмета, если есть (иначе — только текст)
+		var tex: Texture2D = item.icon_texture()
+		if tex != null:
+			btn.icon = tex
+			btn.expand_icon = true
 		btn.pressed.connect(_on_chest_choice.bind(item))
 		choices.add_child(btn)
 
