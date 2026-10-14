@@ -198,8 +198,9 @@ func _build_hud() -> void:
 
 func _spawn_hero() -> void:
 	_hero_actor = Actor.new()
-	# Имя и внешность — из реестра героев (выбор в главном меню)
-	_hero_actor.setup(hero.hero_name(), _hero_battle_stats(), hero.body_color(), hero.body_shape(), 30.0, "hero")
+	# Имя и внешность — из реестра героев (выбор в главном меню).
+	# Класс героя = имя папки спрайтов; если кадров нет — Actor рисует примитив
+	_hero_actor.setup(hero.hero_name(), _hero_battle_stats(), hero.body_color(), hero.body_shape(), 30.0, "hero", hero.kind)
 	# Герой входит в бой с тем здоровьем, что осталось после прошлой волны + передышка
 	_hero_actor.hp = clampf(hero.start_hp(), 1.0, _hero_actor.max_hp)
 	_hero_actor.position = HERO_POS
@@ -346,7 +347,7 @@ func _on_boss_cast(boss: Actor) -> void:
 		i += 1
 	if i > 0:
 		Settings.play_sfx(self, SFX_BOSS_SUMMON)
-	_spawn_popup("Призыв!", boss.position + Vector2(-40, -boss.radius * 2.0 - 70), Color(0.72, 0.5, 0.95), 20)
+	_spawn_popup("Призыв!", boss.position + Vector2(-40, -boss.body_height() - 70), Color(0.72, 0.5, 0.95), 20)
 	_update_boss_cast_block()  # пока призванные живы, перезарядка не идёт
 	_update_hud()
 	# Провокация: герой бьёт призванных в приоритете, босс — только когда они мертвы
@@ -459,7 +460,7 @@ func _trigger_ability() -> void:
 		for e in _enemies:
 			if e.alive:
 				e.add_stun(Hero.ROAR_STUN)
-		_spawn_popup("Рёв!", _hero_actor.position + Vector2(-20, -_hero_actor.radius * 2.0 - 70), Hero.ABILITY_INFO["roar"]["color"], 24)
+		_spawn_popup("Рёв!", _hero_actor.position + Vector2(-20, -_hero_actor.body_height() - 70), Hero.ABILITY_INFO["roar"]["color"], 24)
 		Settings.play_sfx(self, SFX_ABILITY_HERO["knight"])
 		_ability_timer = 0.0
 		_ability_icon.set_fill(0.0)
@@ -490,7 +491,7 @@ func _on_enemy_died(e: Actor) -> void:
 	if not is_summoned:
 		var xp: int = int(e.stats.get("xp", 1))
 		var levels := hero.add_xp(xp)
-		_spawn_popup("+%d опыта" % xp, e.position + Vector2(-30, -e.radius * 2.0 - 40), Color(0.95, 0.9, 0.4), 18)
+		_spawn_popup("+%d опыта" % xp, e.position + Vector2(-30, -e.body_height() - 40), Color(0.95, 0.9, 0.4), 18)
 		if levels > 0:
 			# Новый уровень: характеристики пересчитываются, герой лечится на часть от максимума
 			_hero_actor.stats = _hero_battle_stats()
@@ -498,12 +499,12 @@ func _on_enemy_died(e: Actor) -> void:
 			var healed: float = _hero_actor.max_hp * Hero.LEVEL_UP_HEAL
 			_hero_actor.hp = minf(_hero_actor.max_hp, _hero_actor.hp + healed)
 			_hero_actor.queue_redraw()
-			_spawn_popup("Уровень %d! +%d HP, +%d очко характеристик" % [hero.level, int(healed), Hero.POINTS_PER_LEVEL], _hero_actor.position + Vector2(-160, -_hero_actor.radius * 2.0 - 70), Color(0.5, 1.0, 0.6), 24)
+			_spawn_popup("Уровень %d! +%d HP, +%d очко характеристик" % [hero.level, int(healed), Hero.POINTS_PER_LEVEL], _hero_actor.position + Vector2(-160, -_hero_actor.body_height() - 70), Color(0.5, 1.0, 0.6), 24)
 
 	# Шанс сундука с врага (с босса и призванных сундуки не падают)
 	if not is_boss and not is_summoned and _rng.randf() < Enemies.CHEST_DROP_CHANCE:
 		_spawn_chest(e.position, false)
-		_spawn_popup("Выпал сундук!", e.position + Vector2(-30, -e.radius * 2.0 - 75), Color(0.95, 0.8, 0.3), 20)
+		_spawn_popup("Выпал сундук!", e.position + Vector2(-30, -e.body_height() - 75), Color(0.95, 0.8, 0.3), 20)
 
 	# Герой переключается на следующую случайную цель
 	if _hero_actor.target == e:
@@ -535,12 +536,12 @@ func _on_hero_died(_a: Actor) -> void:
 
 func _on_actor_damaged(a: Actor, amount: int) -> void:
 	var col := Color(1, 0.45, 0.4) if a.team == "hero" else Color(1, 1, 1)
-	_spawn_popup("-%d" % amount, a.position + Vector2(randf_range(-14, 14), -a.radius * 2.0 - 26), col, 16)
+	_spawn_popup("-%d" % amount, a.position + Vector2(randf_range(-14, 14), -a.body_height() - 26), col, 16)
 
 
 ## Уворот/блок: всплывающая надпись («Уворот!» у Вора, «Блок!» у Рыцаря).
 func _on_actor_evaded(a: Actor) -> void:
-	_spawn_popup(a.evasion_label, a.position + Vector2(-24, -a.radius * 2.0 - 58), Color(0.6, 0.9, 1.0), 20)
+	_spawn_popup(a.evasion_label, a.position + Vector2(-24, -a.body_height() - 58), Color(0.6, 0.9, 1.0), 20)
 
 
 ## «Снаряд»: точка летит от атакующего к цели.
@@ -554,19 +555,19 @@ func _on_actor_attacked(src: Actor, dst: Actor) -> void:
 		_ability_timer = 0.0
 		_ability_icon.set_fill(0.0)
 		_ability_icon.tooltip_text = hero.ability_tooltip()
-		_spawn_popup("Смертельный удар!", dst.position + Vector2(-80, -dst.radius * 2.0 - 96), Hero.ABILITY_INFO["execute"]["color"], 22)
+		_spawn_popup("Смертельный удар!", dst.position + Vector2(-80, -dst.body_height() - 96), Hero.ABILITY_INFO["execute"]["color"], 22)
 		Settings.play_sfx(self, SFX_ABILITY_HERO["thief"])
 	if dst.team == "hero":
 		var etype: String = src.stats.get("type", "")
 		if etype == "slime" and _rng.randf() < Enemies.POISON_CHANCE:
 			dst.add_poison()
-			_spawn_popup("Отравление!", dst.position + Vector2(-44, -dst.radius * 2.0 - 96), Color(0.5, 0.9, 0.4), 18)
+			_spawn_popup("Отравление!", dst.position + Vector2(-44, -dst.body_height() - 96), Color(0.5, 0.9, 0.4), 18)
 		elif etype == "wolf" and _rng.randf() < Enemies.BLEED_CHANCE:
 			dst.add_bleed()
-			_spawn_popup("Кровотечение!", dst.position + Vector2(-52, -dst.radius * 2.0 - 96), Color(0.9, 0.35, 0.3), 18)
+			_spawn_popup("Кровотечение!", dst.position + Vector2(-52, -dst.body_height() - 96), Color(0.9, 0.35, 0.3), 18)
 		elif Enemies.STUN_CHANCE.has(etype) and _rng.randf() < Enemies.STUN_CHANCE[etype]:
 			dst.add_stun(Enemies.STUN_DURATION[etype])
-			_spawn_popup("Оглушение!", dst.position + Vector2(-44, -dst.radius * 2.0 - 96), Color(1.0, 0.85, 0.3), 18)
+			_spawn_popup("Оглушение!", dst.position + Vector2(-44, -dst.body_height() - 96), Color(1.0, 0.85, 0.3), 18)
 	if not is_inside_tree():
 		return
 	var dot := ColorRect.new()

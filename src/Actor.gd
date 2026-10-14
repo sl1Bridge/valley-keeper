@@ -18,6 +18,17 @@ const ATTACK_SFX_DB := -6.0
 const EVADE_SFX_DB := -3.0
 const DEATH_SFX_DB := -6.0
 
+## Спрайтовая внешность (необязательно). Если в setup передан sprite_kind
+## и кадры на месте (assets/sprites/<kind>/<anim>/), боец рисуется
+## AnimatedSprite2D вместо цветного примитива. Чистые кадры готовит
+## tools/sprite_pipeline.py из сырых листов ИИ-сервиса.
+const SPRITE_DIR := "res://assets/sprites/"
+const SPRITE_CELL := 512.0      # ячейка чистого листа (sprite_pipeline.CELL_OUT)
+const SPRITE_PAD := 16.0        # отступ от низа ячейки до ступней
+const SPRITE_DISPLAY_H := 132.0 # высота персонажа на экране, px
+const IDLE_FPS := 8.0
+const ATTACK_FPS := 12.0
+
 var display_name := ""
 var team := "enemy"  # "hero" или "enemy"
 var stats := {}      # hp, atk, spd (атак/с)
@@ -39,6 +50,7 @@ var dmg_mult_next := 1.0  # множитель урона следующей а�
 var body_color := Color.WHITE
 var shape := "rect"  # "rect" | "circle" | "triangle"
 var radius := 30.0
+var sprite_kind := ""  # "" — рисовать примитивом; иначе имя папки спрайтов
 var move_speed := 80.0
 var attack_sfx: AudioStream = null  # звук атаки (назначает экран боя), играется в шину "SFX"
 var evade_sfx: AudioStream = null   # звук уворота/блока при полном избегании атаки
@@ -53,28 +65,85 @@ var _flash := 0.0
 var _bleed_accum := 0.0  # дробный урон кровотечения, копится до целого
 var _stun_max := 1.0     # длительность текущего оглушения (для прогресс-бара)
 var _badges := {}        # "poison" | "bleed" | "stun" → StatusBadge
+var _sprite: AnimatedSprite2D = null  # спрайтовая внешность (null — примитив)
 
 
-func setup(p_name: String, p_stats: Dictionary, p_color: Color, p_shape: String, p_radius: float, p_team: String) -> void:
+func setup(p_name: String, p_stats: Dictionary, p_color: Color, p_shape: String, p_radius: float, p_team: String, p_sprite_kind := "") -> void:
 	display_name = p_name
 	stats = p_stats
 	body_color = p_color
 	shape = p_shape
 	radius = p_radius
 	team = p_team
+	sprite_kind = p_sprite_kind
 	max_hp = float(maxi(1, int(stats.get("hp", 1))))
 	hp = max_hp
 	move_speed = float(stats.get("move", 80.0))
 	# Первый удар — в базовом темпе; следующие враги пересчитывают с разбросом
 	_atk_interval = 1.0 / maxf(0.1, float(stats.get("spd", 1.0)))
+	_build_sprite()
 	# Значки статусных эффектов над головой (видны, только когда эффект активен)
 	var kinds := ["poison", "bleed", "stun"]
 	for i in kinds.size():
 		var b := StatusBadge.new(kinds[i])
-		b.position = Vector2(-64.0 + i * 44.0, -radius * 2.0 - 76.0)
+		b.position = Vector2(-64.0 + i * 44.0, -body_height() - 76.0)
 		b.visible = false
 		add_child(b)
 		_badges[kinds[i]] = b
+
+
+## Высота видимого тела бойца: у спрайта — экранная высота, у примитива — 2 радиуса.
+## От неё отсчитываются полоса HP, прогресс-бар умения, значки эффектов
+## и всплывающие надписи (их ставит экран боя — поэтому метод публичный).
+func body_height() -> float:
+	return SPRITE_DISPLAY_H if _sprite != null else radius * 2.0
+
+
+## Загрузить спрайты персонажа, если они есть на диске. Нет файлов — тихо
+## остаёмся на примитиве (так работают классы без сгенерированных спрайтов).
+func _build_sprite() -> void:
+	if sprite_kind == "":
+		return
+	var frames := SpriteFrames.new()
+	if not _load_anim(frames, "idle", IDLE_FPS, true):
+		return  # без idle нет и спрайта
+	_load_anim(frames, "attack", ATTACK_FPS, false)  # атака необязательна
+	_sprite = AnimatedSprite2D.new()
+	_sprite.sprite_frames = frames
+	var s := SPRITE_DISPLAY_H / SPRITE_CELL
+	_sprite.scale = Vector2(s, s)
+	# Ступни — на точке опоры бойца (position): центр ячейки выше на пол-высоты
+	# минус отступ до ступней
+	_sprite.position = Vector2(0, -(SPRITE_CELL / 2.0 - SPRITE_PAD) * s)
+	_sprite.animation_finished.connect(_on_sprite_anim_finished)
+	add_child(_sprite)
+	# play() в кадр входа в дерево молча не стартует — откладываем
+	_sprite.call_deferred("play", "idle")
+
+
+## Загрузить кадры анимации (<kind>/<anim>/<anim>_N.png) в SpriteFrames.
+## Возвращает false, если кадров нет.
+func _load_anim(frames: SpriteFrames, anim: String, fps: float, loop: bool) -> bool:
+	var dir := "%s%s/%s/" % [SPRITE_DIR, sprite_kind, anim]
+	if not ResourceLoader.exists(dir + "%s_1.png" % anim):
+		return false
+	if not frames.has_animation(anim):
+		frames.add_animation(anim)
+	frames.set_animation_speed(anim, fps)
+	frames.set_animation_loop(anim, loop)
+	var i := 1
+	while ResourceLoader.exists(dir + "%s_%d.png" % [anim, i]):
+		frames.add_frame(anim, load(dir + "%s_%d.png" % [anim, i]))
+		i += 1
+	return true
+
+
+## Атака доиграла — возвращаемся в стойку (если живы и бой идёт).
+func _on_sprite_anim_finished() -> void:
+	if _sprite == null or _sprite.animation != &"attack":
+		return
+	if alive and is_inside_tree():
+		_sprite.play(&"idle")
 
 
 ## Наложить стак отравления: у каждого стака свой таймер.
@@ -127,6 +196,7 @@ func step(delta: float) -> void:
 	if _flash > 0.0:
 		_flash -= delta
 		queue_redraw()
+	_update_sprite_tint()
 	var any_effects := false
 	# Отравление: тикают таймеры стаков
 	if not poison_times.is_empty():
@@ -215,6 +285,27 @@ func _process(delta: float) -> void:
 	step(delta)
 
 
+## Окраска спрайта: вспышка при получении урона, затемнение после гибели.
+## (У примитива то же самое делает _draw через body_color.)
+func _update_sprite_tint() -> void:
+	if _sprite == null:
+		return
+	if not alive:
+		_sprite.modulate = Color(0.4, 0.4, 0.45)
+	elif _flash > 0.0:
+		_sprite.modulate = Color(2.2, 2.2, 2.2)  # яркая вспышка
+	else:
+		_sprite.modulate = Color.WHITE
+
+
+## Запустить анимацию атаки, если она загружена.
+func _play_attack_anim() -> void:
+	if _sprite == null or not is_inside_tree():
+		return
+	if _sprite.sprite_frames.has_animation(&"attack"):
+		_sprite.play(&"attack")
+
+
 func _attack() -> void:
 	if target == null or not target.alive:
 		return
@@ -228,6 +319,7 @@ func _attack() -> void:
 	var dmg := maxi(1, floori(float(stats.get("atk", 1)) * (1.0 - t.def_pct) * dmg_mult_next))
 	dmg_mult_next = 1.0
 	t.take_damage(dmg)
+	_play_attack_anim()
 	attacked.emit(self, t)
 
 
@@ -267,6 +359,8 @@ func _die() -> void:
 	hp = 0
 	alive = false
 	_play_sfx(death_sfx, DEATH_SFX_DB)
+	if _sprite != null:
+		_sprite.stop()  # анимации смерти пока нет — замираем, затемнение в _update_sprite_tint
 	died.emit(self)
 	queue_redraw()
 
@@ -292,21 +386,23 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, 0.45))
 	draw_circle(Vector2.ZERO, radius * 0.9, Color(0, 0, 0, 0.18))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	var c := Color.WHITE if _flash > 0.0 else body_color
-	if not alive:
-		c = c.darkened(0.6)
-	var off := Vector2(0, -radius)  # тело над точкой опоры
-	match shape:
-		"circle":
-			draw_circle(off, radius, c)
-		"triangle":
-			draw_colored_polygon(PackedVector2Array([
-				off + Vector2(-radius, radius * 0.7),
-				off + Vector2(radius, radius * 0.7),
-				off + Vector2(0.0, -radius),
-			]), c)
-		_:
-			draw_rect(Rect2(off - Vector2(radius, radius), Vector2(radius * 2.0, radius * 2.0)), c)
+	if _sprite == null:
+		# Примитив: круг/квадрат/треугольник (спрайт рисует себя сам)
+		var c := Color.WHITE if _flash > 0.0 else body_color
+		if not alive:
+			c = c.darkened(0.6)
+		var off := Vector2(0, -radius)  # тело над точкой опоры
+		match shape:
+			"circle":
+				draw_circle(off, radius, c)
+			"triangle":
+				draw_colored_polygon(PackedVector2Array([
+					off + Vector2(-radius, radius * 0.7),
+					off + Vector2(radius, radius * 0.7),
+					off + Vector2(0.0, -radius),
+				]), c)
+			_:
+				draw_rect(Rect2(off - Vector2(radius, radius), Vector2(radius * 2.0, radius * 2.0)), c)
 	if alive:
 		_draw_hp_bar()
 		_draw_cast_bar()
@@ -316,7 +412,7 @@ func _draw() -> void:
 func _draw_hp_bar() -> void:
 	var w := radius * 2.0
 	var h := 7.0
-	var y := -radius * 2.0 - 16.0
+	var y := -body_height() - 16.0
 	draw_rect(Rect2(-radius, y, w, h), Color(0.12, 0.12, 0.14))
 	var fill := Color(0.35, 0.85, 0.4) if team == "hero" else Color(0.9, 0.32, 0.32)
 	draw_rect(Rect2(-radius, y, w * hp_fraction(), h), fill)
@@ -327,7 +423,7 @@ func _draw_cast_bar() -> void:
 	if cast_interval <= 0.0:
 		return
 	var w := radius * 2.0
-	var y := -radius * 2.0 - 29.0
+	var y := -body_height() - 29.0
 	draw_rect(Rect2(-radius, y, w, 5.0), Color(0.12, 0.12, 0.14))
 	var frac := clampf(cast_timer / cast_interval, 0.0, 1.0)
 	draw_rect(Rect2(-radius, y, w * frac, 5.0), Color(0.72, 0.5, 0.95))
@@ -339,7 +435,7 @@ func _draw_taunt_flag() -> void:
 	if not taunt:
 		return
 	var fx := radius * 0.8
-	var fy := -radius * 2.0 - 8.0
+	var fy := -body_height() - 8.0
 	var red := Color(0.9, 0.22, 0.22)
 	draw_line(Vector2(fx, fy), Vector2(fx, fy - 22.0), red, 2.5)
 	draw_colored_polygon(PackedVector2Array([
