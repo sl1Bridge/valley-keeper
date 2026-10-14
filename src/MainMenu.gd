@@ -229,16 +229,64 @@ func _refresh_preview() -> void:
 	_start_btn.disabled = false
 
 
-## Портрет героя: та же фигура (форма + цвет), что и на поле боя.
+## Портрет героя: если у класса есть спрайты (assets/sprites/<kind>/idle/),
+## показывает зацикленную idle-анимацию; иначе — фигуру (форма + цвет),
+## как на поле боя у классов без спрайтов.
 class HeroFigure:
 	extends Control
 
-	var kind := ""
+	var kind := "":
+		set(v):
+			kind = v
+			_rebuild_sprite()
+			queue_redraw()
 	var figure_size := 48.0
+
+	var _sprite: AnimatedSprite2D = null
+
+
+	## Высота спрайта на экране меню: крупнее примитива — у спрайта
+	## полноценное тело, а не символ
+	func _sprite_h() -> float:
+		return figure_size * 1.4
+
+
+	func _rebuild_sprite() -> void:
+		if _sprite != null:
+			_sprite.queue_free()
+			_sprite = null
+		if kind == "":
+			return
+		var dir := "res://assets/sprites/%s/idle/" % kind
+		if not ResourceLoader.exists(dir + "idle_1.png"):
+			return  # нет кадров — остаётся примитив
+		var frames := SpriteFrames.new()
+		frames.add_animation(&"idle")
+		frames.set_animation_speed(&"idle", 8.0)
+		var i := 1
+		while ResourceLoader.exists(dir + "idle_%d.png" % i):
+			frames.add_frame(&"idle", load(dir + "idle_%d.png" % i))
+			i += 1
+		_sprite = AnimatedSprite2D.new()
+		_sprite.sprite_frames = frames
+		add_child(_sprite)
+		# play() в кадр входа в дерево молча не стартует — откладываем
+		_sprite.call_deferred("play", &"idle")
 
 
 	func _draw() -> void:
 		if kind == "" or not Hero.ROSTER.has(kind):
+			return
+		if _sprite != null:
+			# Ступни спрайта — там, где стоит примитив (низ фигуры)
+			var feet := Vector2(size.x * 0.5, size.y * 0.58 + figure_size * 0.5)
+			var s := _sprite_h() / Actor.SPRITE_CELL
+			_sprite.scale = Vector2(s, s)
+			_sprite.position = feet - Vector2(0, (Actor.SPRITE_CELL / 2.0 - Actor.SPRITE_PAD) * s)
+			# Тень под ногами
+			draw_set_transform(feet, 0.0, Vector2(1.0, 0.45))
+			draw_circle(Vector2.ZERO, figure_size * 0.45, Color(0, 0, 0, 0.2))
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 			return
 		var def: Dictionary = Hero.ROSTER[kind]
 		var col: Color = def["color"]
